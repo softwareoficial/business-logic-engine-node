@@ -30,21 +30,56 @@ class SalesCommandHandler {
       func: async (dataService, context, params) => {
         try {
           const { customer_phone, items, paga_con } = params;
-          const res = await dataService.executeCustom('PROCESS_SALE', {
+
+          // 1. Validate and deduct stock for each item
+          for (const item of items) {
+            const productPath = `products[code=${item.code}].quantity`;
+            const currentStockRes = await dataService.read(productPath, context);
+
+            if (!currentStockRes.success || !currentStockRes.data) {
+              return ServiceResponseHelper.error(
+                `Product ${item.code} not found or stock inaccessible`,
+                'STOCK_NOT_FOUND',
+              );
+            }
+
+            const currentQuantity = parseInt(currentStockRes.data);
+            const requestedQuantity = parseInt(item.quantity);
+
+            if (currentQuantity < requestedQuantity) {
+              return ServiceResponseHelper.error(
+                `Insufficient stock for product ${item.code}. Available: ${currentQuantity}`,
+                'INSUFFICIENT_STOCK',
+              );
+            }
+
+            const newQuantity = currentQuantity - requestedQuantity;
+            await dataService.write(productPath, newQuantity, context);
+          }
+
+          // 2. Register the sale in the 'sales' array
+          const saleRecord = {
+            date: new Date().toISOString(),
             customer_phone,
             items,
+            total: items.reduce(
+              (sum: number, i: any) => sum + parseFloat(i.price) * parseInt(i.quantity),
+              0,
+            ),
             paga_con,
-            tenant_id: context.tenantId,
-          });
+            status: 'completed',
+          };
 
-          if (!res.success) {
+          const saleRes = await dataService.push('sales', saleRecord, context);
+
+          if (!saleRes.success) {
             return ServiceResponseHelper.error(
-              `Sale processing failed: ${res.message}`,
-              res.data?.error_code || 'SALES_PROCESS_ERROR',
+              'Failed to register sale record',
+              'SALE_REGISTRATION_ERROR',
             );
           }
 
-          return ServiceResponseHelper.success('Sale processed successfully.', res.data);
+          return ServiceResponseHelper.success('Sale processed successfully.', saleRes.data);
         } catch (e: any) {
           return ServiceResponseHelper.error(
             e.message || 'Error processing sale',
