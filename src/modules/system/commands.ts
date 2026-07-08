@@ -191,9 +191,20 @@ class SystemCommandHandler {
       metadata: { requiredPlan: 'free' },
       func: async (dataService, context, params) => {
         try {
-          return await dataService.executeCustom('CLIENT:user-list', {
+          const result = await dataService.executeCustom('CLIENT:user-list', {
             clienteId: (dataService as any).ensureClientId({ tenantId: context.tenantId }),
           });
+
+          if (result.success && result.data?.usuarios) {
+            return {
+              ...result,
+              data: {
+                results: result.data.usuarios,
+              },
+            };
+          }
+
+          return result;
         } catch (e: any) {
           return ServiceResponseHelper.error(
             `Error listing users: ${e.message}`,

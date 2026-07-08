@@ -67,6 +67,34 @@ class DbClient implements IDataService {
     return this.url;
   }
 
+  public toExternalId(id: number | string): string {
+    const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
+    if (isNaN(numericId)) return id.toString();
+    return `00000000-0000-0000-0000-${numericId.toString().padStart(12, '0')}`;
+  }
+
+  private normalizeResponseData(data: any): any {
+    if (data === null || data === undefined) return data;
+    if (Array.isArray(data)) {
+      return data.map((item) => this.normalizeResponseData(item));
+    }
+    if (typeof data === 'object') {
+      const normalized: Record<string, any> = {};
+      for (const [key, value] of Object.entries(data)) {
+        if (
+          (key === 'clienteId' || key === 'tenantId' || key === 'tenant_id') &&
+          typeof value === 'number'
+        ) {
+          normalized[key] = this.toExternalId(value);
+        } else {
+          normalized[key] = this.normalizeResponseData(value);
+        }
+      }
+      return normalized;
+    }
+    return data;
+  }
+
   async execute(command: string, payload: Record<string, any>): Promise<ServiceResponse> {
     if (!this.isConnected || !this.httpClient || !this.adminToken) {
       return ServiceResponseHelper.error(
@@ -86,7 +114,10 @@ class DbClient implements IDataService {
 
       // The API returns { status: "success" | "error", data: ..., error: ... }
       if (result.status === 'success') {
-        return ServiceResponseHelper.success(result.message || 'Operation successful', result.data);
+        return ServiceResponseHelper.success(
+          result.message || 'Operation successful',
+          this.normalizeResponseData(result.data),
+        );
       } else {
         return ServiceResponseHelper.error(
           result.error?.message || 'API Error',
@@ -116,6 +147,12 @@ class DbClient implements IDataService {
     // Security: Reject empty/zero UUIDs to prevent global access leaks
     if (idStr === '00000000-0000-0000-0000-000000000000' || idStr === '0') {
       throw new Error('Invalid Tenant ID: Global access via zero-UUID is forbidden');
+    }
+
+    // Check for padded UUID format (id_num_XXXXX)
+    if (/^00000000-0000-0000-0000-\d{12}$/.test(idStr)) {
+      const parts = idStr.split('-');
+      return parseInt(parts[4], 10);
     }
 
     // If it's a simple numeric string, parse it directly
