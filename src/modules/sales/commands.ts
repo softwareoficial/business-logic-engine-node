@@ -92,7 +92,7 @@ class SalesCommandHandler {
           return ServiceResponseHelper.success('Sale processed successfully.', saleRes.data);
         } catch (e: any) {
           return ServiceResponseHelper.error(
-            e.message || 'Error processing sale',
+            `Error processing sale: ${e.message}. Data structure: ${JSON.stringify(e.stack || 'no stack')}`,
             'SALES_COBRAR_ERROR',
           );
         }
