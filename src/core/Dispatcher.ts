@@ -33,6 +33,11 @@ class Dispatcher {
     this.dataService = dataService;
   }
 
+  public getCommandMetadata(commandName: string) {
+    const command = this.registry.get(commandName);
+    return command ? { ...command.metadata } : null;
+  }
+
   public register(name: string, func: CommandFunction, metadata: CommandMetadata): void {
     this.registry.set(name, { func, metadata });
   }
@@ -40,7 +45,12 @@ class Dispatcher {
   public registerHandler(handler: any): void {
     if (handler.commands && Array.isArray(handler.commands)) {
       for (const cmdDef of handler.commands) {
-        this.register(cmdDef.name, cmdDef.func.bind(handler), cmdDef.metadata);
+        this.register(cmdDef.name, cmdDef.func.bind(handler), {
+          name: cmdDef.name,
+          description: cmdDef.description,
+          paramsModel: cmdDef.paramsModel,
+          requiredPlan: cmdDef.metadata.requiredPlan,
+        });
       }
     }
   }

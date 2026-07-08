@@ -23,6 +23,17 @@ export class AppError extends Error {
   }
 }
 
+export interface FormattedErrorResponse {
+  success: boolean;
+  message: string;
+  error: {
+    source: ErrorSource;
+    code: string;
+    details: any;
+  };
+  learning_center?: any;
+}
+
 export class ErrorHandler {
   /**
    * Normalizes any error into an AppError to be handled by the global middleware.
@@ -74,7 +85,7 @@ export class ErrorHandler {
   /**
    * Logs the error to the Event Bus (Logger) and returns a formatted response for the frontend.
    */
-  public static formatResponse(error: AppError) {
+  public static formatResponse(error: AppError): FormattedErrorResponse {
     // Log to our internal event bus
     const logLevel = error.statusCode >= 500 ? LogLevel.CRITICAL : LogLevel.ERROR;
     logger.error(error.message, error.source, {

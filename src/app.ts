@@ -7,6 +7,7 @@ import { dbClient } from './core/DbClient';
 import { RequestContext } from './core/RequestContext';
 import { ErrorHandler } from './core/ErrorHandler';
 import { logger } from './core/Logger';
+import { ExampleGenerator } from './core/ExampleGenerator';
 
 // --- Validation Schemas ---
 const CommandRequestSchema = z.object({
@@ -32,6 +33,33 @@ app.get('/health', async (req: Request, res: Response) => {
     status: 'online',
     db_connected: dbClient.getConnected(),
     db_url: dbClient.getUrl(),
+  });
+});
+
+app.get('/commands', (req: Request, res: Response) => {
+  // We use a hack to access the private registry since it's not exposed
+  // In a real production scenario, we would add a getCommands() method to the Dispatcher
+  const registry = (dispatcher as any).registry;
+
+  if (!registry) {
+    return res.status(500).json({ success: false, message: 'Dispatcher registry not found' });
+  }
+
+  const commandsList = Array.from(registry.values()).map((cmd: any) => ({
+    name: cmd.metadata.name,
+    description: cmd.metadata.description,
+    paramsModel: cmd.metadata.paramsModel,
+    requiredPlan: cmd.metadata.requiredPlan,
+    example: {
+      cmd: cmd.metadata.name,
+      params: ExampleGenerator.generate(cmd.metadata.paramsModel),
+    },
+  }));
+
+  res.json({
+    success: true,
+    total: commandsList.length,
+    commands: commandsList,
   });
 });
 
@@ -75,6 +103,23 @@ app.post('/execute', async (req: Request, res: Response) => {
     const duration = Date.now() - startTime;
     const appError = ErrorHandler.handle(error);
     const formattedResponse = ErrorHandler.formatResponse(appError);
+
+    // --- LEARNING CENTER LOGIC ---
+    // We provide educational feedback if we can identify the command being attempted
+    const attemptedCmd = req.body?.cmd;
+    const metadata = attemptedCmd ? dispatcher.getCommandMetadata(attemptedCmd) : null;
+
+    if (metadata) {
+      formattedResponse.learning_center = {
+        command: attemptedCmd,
+        goal: metadata.description,
+        expected_params: metadata.paramsModel,
+        correct_example: {
+          cmd: attemptedCmd,
+          params: ExampleGenerator.generate(metadata.paramsModel),
+        },
+      };
+    }
 
     // Use the unified logEvent method for errors (Fire and forget)
     dispatcher
