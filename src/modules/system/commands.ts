@@ -174,7 +174,7 @@ class SystemCommandHandler {
             username,
             password,
             role_id: 1,
-            clienteId: context.tenantId,
+            clienteId: (dataService as any).ensureClientId({ tenantId: context.tenantId }),
           });
         } catch (e: any) {
           return ServiceResponseHelper.error(
