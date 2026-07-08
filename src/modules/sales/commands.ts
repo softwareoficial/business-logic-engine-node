@@ -3,144 +3,184 @@ import { RequestContext } from '../../core/RequestContext';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface CommandDefinition {
-    name: string;
-    description: string;
-    paramsModel?: Record<string, string>;
-    func: (dataService: IDataService, context: RequestContext, params: any) => Promise<ServiceResponse>;
-    metadata: {
-        requiredPlan: string;
-    };
+  name: string;
+  description: string;
+  paramsModel?: Record<string, string>;
+  func: (
+    dataService: IDataService,
+    context: RequestContext,
+    params: any,
+  ) => Promise<ServiceResponse>;
+  metadata: {
+    requiredPlan: string;
+  };
 }
 
 class SalesCommandHandler {
-    public commands: CommandDefinition[] = [
-        {
-            name: "sales.cobrar",
-            description: "Processes a sale, updates stock and registers the payment.",
-            paramsModel: {
-                customer_phone: "string",
-                items: "list",
-                paga_con: "decimal",
-            },
-            metadata: { requiredPlan: "free" },
-            func: async (dataService, context, params) => {
-                try {
-                    const { customer_phone, items, paga_con } = params;
-                    const res = await dataService.executeCustom("PROCESS_SALE", {
-                        customer_phone,
-                        items,
-                        paga_con,
-                        tenant_id: context.tenantId,
-                    });
+  public commands: CommandDefinition[] = [
+    {
+      name: 'sales.cobrar',
+      description: 'Processes a sale, updates stock and registers the payment.',
+      paramsModel: {
+        customer_phone: 'string',
+        items: 'list',
+        paga_con: 'decimal',
+      },
+      metadata: { requiredPlan: 'free' },
+      func: async (dataService, context, params) => {
+        try {
+          const { customer_phone, items, paga_con } = params;
+          const res = await dataService.executeCustom('PROCESS_SALE', {
+            customer_phone,
+            items,
+            paga_con,
+            tenant_id: context.tenantId,
+          });
 
-                    if (!res.success) {
-                        return ServiceResponseHelper.error(
-                            `Sale processing failed: ${res.message}`,
-                            res.data?.error_code || "SALES_PROCESS_ERROR"
-                        );
-                    }
+          if (!res.success) {
+            return ServiceResponseHelper.error(
+              `Sale processing failed: ${res.message}`,
+              res.data?.error_code || 'SALES_PROCESS_ERROR',
+            );
+          }
 
-                    return ServiceResponseHelper.success("Sale processed successfully.", res.data);
-                } catch (e: any) {
-                    return ServiceResponseHelper.error(e.message || "Error processing sale", "SALES_COBRAR_ERROR");
-                }
-            }
-        },
-        {
-            name: "sales.create",
-            description: "Creates a sales order and generates a payment link.",
-            paramsModel: {
-                items: "list",
-                total: "float",
-                account_alias: "string",
-                client_request_id: "string",
-            },
-            metadata: { requiredPlan: "free" },
-            func: async (dataService, context, params) => {
-                try {
-                    const { items, total, account_alias, client_request_id } = params;
-
-                    // 0. Idempotency Check
-                    if (client_request_id) {
-                        const res = await dataService.find("sales_orders", { client_request_id }, { limit: 1 }, context);
-                        if (res.success && res.data && res.data.length > 0) {
-                            return ServiceResponseHelper.success("Sale already registered.", { sale_id: res.data[0].id });
-                        }
-                    }
-
-                    // 1. Credentials
-                    const resCred = await dataService.find("credentials", {
-                        service_name: "mercadopago",
-                        account_alias: account_alias,
-                    }, { limit: 1 }, context);
-
-                    if (!resCred.success || !resCred.data || resCred.data.length === 0) {
-                        return ServiceResponseHelper.error("Payment credentials not found", "MP_CREDS_ERROR");
-                    }
-
-                    // 2. Sales Order
-                    const saleId = uuidv4();
-                    const saleRes = await dataService.push("sales_orders", {
-                        id: saleId,
-                        total: total,
-                        payment_status: "pending",
-                        client_request_id: client_request_id,
-                    }, context);
-
-                    if (!saleRes.success) return saleRes;
-
-                    // 3. Items
-                    for (const item of items) {
-                        const subtotal = parseFloat(item.price) * parseInt(item.quantity);
-                        await dataService.push("sale_items", {
-                            sale_id: saleId,
-                            product_code: item.code,
-                            quantity: item.quantity,
-                            price: item.price,
-                            subtotal: subtotal,
-                        }, context);
-                    }
-
-                    // 4. Mock Payment Link
-                    const paymentLink = `https://api.payments.com/pay/${saleId}`;
-
-                    // 5. Update Order
-                    await dataService.write(`sales_orders[id=${saleId}]`, { payment_link: paymentLink }, context);
-
-                    return ServiceResponseHelper.success("Sale created.", { payment_link: paymentLink, sale_id: saleId });
-                } catch (e: any) {
-                    return ServiceResponseHelper.error(e.message || "Error creating sale", "SALE_CREATE_ERROR");
-                }
-            }
-        },
-        {
-            name: "sales.confirm_payment",
-            description: "Confirms a payment and deducts products from stock.",
-            paramsModel: { sale_id: "string" },
-            metadata: { requiredPlan: "free" },
-            func: async (dataService, context, params) => {
-                try {
-                    const { sale_id } = params;
-                    const res = await dataService.executeCustom("CONFIRM_SALE_PAYMENT", {
-                        sale_id: sale_id,
-                        user_id: context.userId,
-                        tenant_id: context.tenantId,
-                    });
-
-                    if (!res.success) {
-                        return ServiceResponseHelper.error(
-                            `Payment confirmation failed: ${res.message}`,
-                            res.data?.error_code || "CONFIRM_PAYMENT_ERROR"
-                        );
-                    }
-
-                    return ServiceResponseHelper.success("Payment confirmed and stock updated.");
-                } catch (e: any) {
-                    return ServiceResponseHelper.error(e.message || "Error confirming payment", "CONFIRM_PAYMENT_ERROR");
-                }
-            }
+          return ServiceResponseHelper.success('Sale processed successfully.', res.data);
+        } catch (e: any) {
+          return ServiceResponseHelper.error(
+            e.message || 'Error processing sale',
+            'SALES_COBRAR_ERROR',
+          );
         }
-    ];
+      },
+    },
+    {
+      name: 'sales.create',
+      description: 'Creates a sales order and generates a payment link.',
+      paramsModel: {
+        items: 'list',
+        total: 'float',
+        account_alias: 'string',
+        client_request_id: 'string',
+      },
+      metadata: { requiredPlan: 'free' },
+      func: async (dataService, context, params) => {
+        try {
+          const { items, total, account_alias, client_request_id } = params;
+
+          // 0. Idempotency Check
+          if (client_request_id) {
+            const res = await dataService.find(
+              'sales_orders',
+              { client_request_id },
+              { limit: 1 },
+              context,
+            );
+            if (res.success && res.data && res.data.length > 0) {
+              return ServiceResponseHelper.success('Sale already registered.', {
+                sale_id: res.data[0].id,
+              });
+            }
+          }
+
+          // 1. Credentials
+          const resCred = await dataService.find(
+            'credentials',
+            {
+              service_name: 'mercadopago',
+              account_alias: account_alias,
+            },
+            { limit: 1 },
+            context,
+          );
+
+          if (!resCred.success || !resCred.data || resCred.data.length === 0) {
+            return ServiceResponseHelper.error('Payment credentials not found', 'MP_CREDS_ERROR');
+          }
+
+          // 2. Sales Order
+          const saleId = uuidv4();
+          const saleRes = await dataService.push(
+            'sales_orders',
+            {
+              id: saleId,
+              total: total,
+              payment_status: 'pending',
+              client_request_id: client_request_id,
+            },
+            context,
+          );
+
+          if (!saleRes.success) return saleRes;
+
+          // 3. Items
+          for (const item of items) {
+            const subtotal = parseFloat(item.price) * parseInt(item.quantity);
+            await dataService.push(
+              'sale_items',
+              {
+                sale_id: saleId,
+                product_code: item.code,
+                quantity: item.quantity,
+                price: item.price,
+                subtotal: subtotal,
+              },
+              context,
+            );
+          }
+
+          // 4. Mock Payment Link
+          const paymentLink = `https://api.payments.com/pay/${saleId}`;
+
+          // 5. Update Order
+          await dataService.write(
+            `sales_orders[id=${saleId}]`,
+            { payment_link: paymentLink },
+            context,
+          );
+
+          return ServiceResponseHelper.success('Sale created.', {
+            payment_link: paymentLink,
+            sale_id: saleId,
+          });
+        } catch (e: any) {
+          return ServiceResponseHelper.error(
+            e.message || 'Error creating sale',
+            'SALE_CREATE_ERROR',
+          );
+        }
+      },
+    },
+    {
+      name: 'sales.confirm_payment',
+      description: 'Confirms a payment and deducts products from stock.',
+      paramsModel: { sale_id: 'string' },
+      metadata: { requiredPlan: 'free' },
+      func: async (dataService, context, params) => {
+        try {
+          const { sale_id } = params;
+          const res = await dataService.executeCustom('CONFIRM_SALE_PAYMENT', {
+            sale_id: sale_id,
+            user_id: context.userId,
+            tenant_id: context.tenantId,
+          });
+
+          if (!res.success) {
+            return ServiceResponseHelper.error(
+              `Payment confirmation failed: ${res.message}`,
+              res.data?.error_code || 'CONFIRM_PAYMENT_ERROR',
+            );
+          }
+
+          return ServiceResponseHelper.success('Payment confirmed and stock updated.');
+        } catch (e: any) {
+          return ServiceResponseHelper.error(
+            e.message || 'Error confirming payment',
+            'CONFIRM_PAYMENT_ERROR',
+          );
+        }
+      },
+    },
+  ];
 }
 
 export const salesCommands = new SalesCommandHandler();
