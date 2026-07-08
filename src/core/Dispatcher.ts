@@ -64,7 +64,6 @@ class Dispatcher {
     try {
       if (!this.dataService) return;
 
-      // Convert UUID tenantId to numeric ID for the Infrastructure Engine
       const numericTenantId = (this.dataService as any).ensureClientId({
         tenantId: context.tenantId,
       });
@@ -72,9 +71,14 @@ class Dispatcher {
       await this.dataService.execute('SYSTEM:log-event', {
         tenantId: numericTenantId,
         status: status,
-        source: 'BACKEND',
+        source: context.source,
         command: command,
-        userId: context.userId ? 1 : undefined, // Infrastructure expects numeric userId if provided
+        userId: context.userId ? 1 : undefined,
+        // Automatic Telemetry Mapping
+        user_agent: context.userAgent,
+        ip_address: context.ipAddress,
+        app_id: context.appId,
+        request_id: context.requestId,
         ...details,
       });
     } catch (e) {

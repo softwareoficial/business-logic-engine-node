@@ -189,30 +189,39 @@ app.get('/commands', (req: Request, res: Response) => {
 
 app.post('/execute', async (req: Request, res: Response) => {
   const startTime = Date.now();
-  let context: RequestContext | null = null;
   try {
     const validatedData = CommandRequestSchema.parse(req.body);
 
-    context = {
+    const context: RequestContext = {
       tenantId: validatedData.tenantId,
       userId: validatedData.userId,
       role: validatedData.role,
       plan: validatedData.plan,
+      source: req.body.source || 'FRONTEND',
+      appId: req.body.appId || 'web-client',
+      userAgent: req.headers['user-agent'] || 'unknown',
+      ipAddress: Array.isArray(req.headers['x-forwarded-for'])
+        ? req.headers['x-forwarded-for'][0]
+        : ((req.headers['x-forwarded-for'] ||
+            req.ip ||
+            req.socket.remoteAddress ||
+            'unknown') as string),
+      requestId: Array.isArray(req.headers['x-request-id'])
+        ? req.headers['x-request-id'][0]
+        : ((req.headers['x-request-id'] || crypto.randomUUID()) as string),
     };
 
     const result = await dispatcher.execute(validatedData.cmd, validatedData.params, context);
 
     if (result.success === false) {
-      throw result; // Throw the ServiceResponse so it is caught by the ErrorHandler
+      throw result;
     }
 
     const duration = Date.now() - startTime;
 
-    // Use the unified logEvent method (Fire and forget)
     dispatcher
       .logEvent(context, validatedData.cmd, 'SUCCESS', {
         duration,
-        userAgent: req.headers['user-agent'] || 'unknown',
         clientType: req.body.clientType || 'unknown',
       })
       .catch((err) => console.error('Event logging failed:', err));
@@ -228,8 +237,6 @@ app.post('/execute', async (req: Request, res: Response) => {
     const appError = ErrorHandler.handle(error);
     const formattedResponse = ErrorHandler.formatResponse(appError);
 
-    // --- LEARNING CENTER LOGIC ---
-    // We provide educational feedback if we can identify the command being attempted
     const attemptedCmd = req.body?.cmd;
     const metadata = attemptedCmd ? dispatcher.getCommandMetadata(attemptedCmd) : null;
 
@@ -245,25 +252,21 @@ app.post('/execute', async (req: Request, res: Response) => {
       };
     }
 
-    // Use the unified logEvent method for errors (Fire and forget)
+    const errorContext: RequestContext = {
+      tenantId: req.body?.tenantId || 'unknown',
+      userId: req.body?.userId || 'unknown',
+      role: 'unknown',
+      plan: 'unknown',
+      source: req.body?.source || 'FRONTEND',
+      requestId: crypto.randomUUID(),
+    };
+
     dispatcher
-      .logEvent(
-        context || {
-          tenantId: req.body?.tenantId || 'unknown',
-          userId: req.body?.userId || 'unknown',
-          role: 'unknown',
-          plan: 'unknown',
-        },
-        req.body?.cmd || 'unknown',
-        'ERROR',
-        {
-          duration,
-          source: appError.source,
-          errorCode: appError.code,
-          userAgent: req.headers['user-agent'] || 'unknown',
-          clientType: req.body?.clientType || 'unknown',
-        },
-      )
+      .logEvent(errorContext, req.body?.cmd || 'unknown', 'ERROR', {
+        duration,
+        source: appError.source,
+        errorCode: appError.code,
+      })
       .catch((err) => console.error('Event logging failed:', err));
 
     res.status(appError.statusCode).json(formattedResponse);
