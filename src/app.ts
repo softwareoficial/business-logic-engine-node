@@ -107,6 +107,9 @@ app.get('/', (req: Request, res: Response) => {
       <div class="endpoint">
         <span class="method">POST</span> <code>/execute</code>
         <p>El "Motor de Ejecución". Envía cualquier comando aquí para obtener un resultado. Es el único endpoint que necesitarás para la lógica de negocio.</p>
+        <div style="margin-top: 10px; font-size: 0.85em; color: #666; background: #f9f9f9; padding: 8px; border-radius: 4px; border: 1px dashed #ccc;">
+          <strong>💡 Telemetría Automática:</strong> Puedes enviar los campos <code>source</code> (ej: 'ANDROID_APP') y <code>appId</code> (ej: 'my-store-app') para rastrear la actividad de diferentes plataformas en el panel de administración.
+        </div>
       </div>
       
       <div class="endpoint">
@@ -134,7 +137,9 @@ app.get('/', (req: Request, res: Response) => {
             <pre style="background: #2c3e50; color: #fff; padding: 1rem; border-radius: 5px; overflow-x: auto;">{
   "cmd": "nombre.del.comando",
   "params": { "clave": "valor" },
-  "tenantId": "tu-uuid-aqui"
+  "tenantId": "tu-uuid-aqui",
+  "source": "web-app",
+  "appId": "v1.0-stable"
 }</pre>
           </div>
         </div>
