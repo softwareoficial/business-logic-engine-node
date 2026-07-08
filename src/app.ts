@@ -13,7 +13,7 @@ import { ExampleGenerator } from './core/ExampleGenerator';
 const CommandRequestSchema = z.object({
   cmd: z.string(),
   params: z.record(z.string(), z.any()).optional().default({}),
-  tenantId: z.union([z.string().uuid(), z.string().regex(/^\\d+$/)]),
+  tenantId: z.union([z.string().uuid(), z.string().regex(/^\d+$/)]),
   userId: z.string().uuid().optional(),
   role: z.string().default('employee'),
   plan: z.string().default('free'),
