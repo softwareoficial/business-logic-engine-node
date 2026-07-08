@@ -19,7 +19,14 @@ const CommandRequestSchema = z.object({
   plan: z.string().default('free'),
 });
 
+const RegisterSchema = z.object({
+  username: z.string().min(3, 'Username must be at least 3 characters'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+  nombreCliente: z.string().min(1, 'Business name is required'),
+});
+
 type CommandRequest = z.infer<typeof CommandRequestSchema>;
+type RegisterRequest = z.infer<typeof RegisterSchema>;
 
 const app = express();
 
@@ -27,6 +34,48 @@ app.use(cors());
 app.use(express.json());
 
 // --- Endpoints ---
+
+app.post('/register', async (req: Request, res: Response) => {
+  try {
+    const validatedData = RegisterSchema.parse(req.body);
+
+    // We use the dispatcher to call the infrastructure's registration logic
+    // Since this is a global system action, we pass a dummy or system context
+    const result = await dispatcher.execute(
+      'APP:self-register',
+      {
+        username: validatedData.username,
+        password: validatedData.password,
+        nombreCliente: validatedData.nombreCliente,
+      },
+      {
+        tenantId: '00000000-0000-0000-0000-000000000000', // System context for registration
+        userId: '00000000-0000-0000-0000-000000000000',
+        role: 'admin',
+        plan: 'free',
+      },
+    );
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Account created successfully',
+      data: result.data, // Should contain clienteId and token
+    });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: error.issues,
+      });
+    }
+    res.status(500).json({ success: false, message: error.message || 'Internal server error' });
+  }
+});
 
 app.get('/', (req: Request, res: Response) => {
   const html = `
