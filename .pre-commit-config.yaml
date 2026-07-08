@@ -11,3 +11,9 @@ repos:
         entry: npx eslint --fix
         language: system
         files: \.(js|ts)$
+      - id: typescript-check
+        name: TypeScript Check
+        entry: npm run build
+        language: system
+        pass_filenames: false
+        always_run: true

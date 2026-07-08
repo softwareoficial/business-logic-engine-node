@@ -102,7 +102,7 @@ class DbClient implements IDataService {
     }
   }
 
-  private ensureClientId(payload: Record<string, any>): number {
+  public ensureClientId(payload: Record<string, any>): number {
     const id = payload.tenantId || payload.clienteId || '1';
 
     if (typeof id === 'number') return id;

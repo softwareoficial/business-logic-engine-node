@@ -56,21 +56,13 @@ app.post('/execute', async (req: Request, res: Response) => {
 
     const duration = Date.now() - startTime;
 
-    // Log the event to the database (Fire and forget to not block response)
+    // Use the unified logEvent method (Fire and forget)
     dispatcher
-      .execute(
-        'SYSTEM:log-event',
-        {
-          tenantId: validatedData.tenantId,
-          userId: validatedData.userId,
-          command: validatedData.cmd,
-          status: 'SUCCESS',
-          duration: duration,
-          userAgent: req.headers['user-agent'] || 'unknown',
-          clientType: req.body.clientType || 'unknown',
-        },
-        context,
-      )
+      .logEvent(context, validatedData.cmd, 'SUCCESS', {
+        duration,
+        userAgent: req.headers['user-agent'] || 'unknown',
+        clientType: req.body.clientType || 'unknown',
+      })
       .catch((err) => console.error('Event logging failed:', err));
 
     logger.info(`Command executed successfully: ${validatedData.cmd}`, {
@@ -84,26 +76,23 @@ app.post('/execute', async (req: Request, res: Response) => {
     const appError = ErrorHandler.handle(error);
     const formattedResponse = ErrorHandler.formatResponse(appError);
 
-    // Log the error event to the database
+    // Use the unified logEvent method for errors (Fire and forget)
     dispatcher
-      .execute(
-        'SYSTEM:log-event',
-        {
-          tenantId: req.body?.tenantId || 'unknown',
-          userId: req.body?.userId || 'unknown',
-          command: req.body?.cmd || 'unknown',
-          status: 'ERROR',
-          duration: duration,
-          source: appError.source,
-          errorCode: appError.code,
-          userAgent: req.headers['user-agent'] || 'unknown',
-          clientType: req.body?.clientType || 'unknown',
-        },
+      .logEvent(
         context || {
           tenantId: req.body?.tenantId || 'unknown',
           userId: req.body?.userId || 'unknown',
           role: 'unknown',
           plan: 'unknown',
+        },
+        req.body?.cmd || 'unknown',
+        'ERROR',
+        {
+          duration,
+          source: appError.source,
+          errorCode: appError.code,
+          userAgent: req.headers['user-agent'] || 'unknown',
+          clientType: req.body?.clientType || 'unknown',
         },
       )
       .catch((err) => console.error('Event logging failed:', err));

@@ -23,6 +23,12 @@ class Dispatcher {
   private registry: Map<string, RegisteredCommand> = new Map();
   private dataService: IDataService | null = null;
 
+  private readonly PLAN_WEIGHTS: Record<string, number> = {
+    free: 0,
+    pro: 1,
+    enterprise: 2,
+  };
+
   public setDataService(dataService: IDataService): void {
     this.dataService = dataService;
   }
@@ -36,6 +42,33 @@ class Dispatcher {
       for (const cmdDef of handler.commands) {
         this.register(cmdDef.name, cmdDef.func.bind(handler), cmdDef.metadata);
       }
+    }
+  }
+
+  public async logEvent(
+    context: RequestContext,
+    command: string,
+    status: 'SUCCESS' | 'ERROR',
+    details: Record<string, any> = {},
+  ): Promise<void> {
+    try {
+      if (!this.dataService) return;
+
+      // Convert UUID tenantId to numeric ID for the Infrastructure Engine
+      const numericTenantId = (this.dataService as any).ensureClientId({
+        tenantId: context.tenantId,
+      });
+
+      await this.dataService.execute('SYSTEM:log-event', {
+        tenantId: numericTenantId,
+        status: status,
+        source: 'BACKEND',
+        command: command,
+        userId: context.userId ? 1 : undefined, // Infrastructure expects numeric userId if provided
+        ...details,
+      });
+    } catch (e) {
+      console.error(`Event logging failed for ${command}:`, e);
     }
   }
 
@@ -69,29 +102,12 @@ class Dispatcher {
 
     try {
       const result = await func(this.dataService, context, params);
-      await this.audit(context, commandName, params);
+      await this.logEvent(context, commandName, 'SUCCESS');
       return result;
     } catch (e: any) {
       console.error(`Execution error in ${commandName}:`, e);
+      await this.logEvent(context, commandName, 'ERROR', { errorCode: e.message });
       return ServiceResponseHelper.error(e.message || 'Execution error', 'EXECUTION_ERROR');
-    }
-  }
-
-  private async audit(context: RequestContext, command: string, params: any): Promise<void> {
-    try {
-      if (!this.dataService) return;
-
-      await this.dataService.execute('USER:write', {
-        userId: 'system',
-        tenantId: context.tenantId,
-        data: {
-          command: command,
-          params: params,
-          timestamp: new Date().toISOString(),
-        },
-      });
-    } catch (e) {
-      console.error(`Audit failed for ${command}:`, e);
     }
   }
 }
