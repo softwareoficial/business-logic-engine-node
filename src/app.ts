@@ -50,6 +50,10 @@ app.post('/execute', async (req: Request, res: Response) => {
 
     const result = await dispatcher.execute(validatedData.cmd, validatedData.params, context);
 
+    if (result.success === false) {
+      throw result; // Throw the ServiceResponse so it is caught by the ErrorHandler
+    }
+
     const duration = Date.now() - startTime;
 
     // Log the event to the database (Fire and forget to not block response)

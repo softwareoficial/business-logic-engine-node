@@ -25,7 +25,7 @@ class StockCommandHandler {
       func: async (dataService, context, params) => {
         try {
           // Use the new find method: path, filter, options, context
-          return await (dataService as any).find('products', {}, {}, context);
+          return await dataService.find('products', {}, {}, context);
         } catch (e: any) {
           return ServiceResponseHelper.error(
             `Error listing products: ${e.message}`,
@@ -50,7 +50,7 @@ class StockCommandHandler {
         try {
           const { code, name, price, quantity, category, is_weight } = params;
           // Use push to add a new product to the array
-          return await (dataService as any).push(
+          return await dataService.push(
             'products',
             {
               code,
@@ -80,7 +80,7 @@ class StockCommandHandler {
           const { code, quantity, reason = 'MANUAL' } = params;
           // Use write with a path to update only the quantity of the specific product
           const path = `products[code=${code}].quantity`;
-          return await (dataService as any).write(path, quantity, context);
+          return await dataService.write(path, quantity, context);
         } catch (e: any) {
           return ServiceResponseHelper.error(
             `Error updating stock: ${e.message}`,
@@ -98,7 +98,7 @@ class StockCommandHandler {
         try {
           const { code } = params;
           // Use find with a filter on the code
-          return await (dataService as any).find('products', { code }, {}, context);
+          return await dataService.find('products', { code }, {}, context);
         } catch (e: any) {
           return ServiceResponseHelper.error(
             `Error fetching product: ${e.message}`,

@@ -31,7 +31,17 @@ export class ErrorHandler {
     // 1. If it's already an AppError, just return it
     if (error instanceof AppError) return error;
 
-    // 2. Handle Infrastructure/API Errors (from DbClient/Axios)
+    // 2. Handle Infrastructure ServiceResponse errors (success: false)
+    if (error && typeof error === 'object' && error.success === false && 'code' in error) {
+      return new AppError(
+        error.message || 'Infrastructure Error',
+        ErrorSource.INFRASTRUCTURE,
+        error.code || 'INFRA_ERROR',
+        400,
+      );
+    }
+
+    // 3. Handle Axios/Network Errors
     if (error.response?.data || (error.code && error.message?.includes('API'))) {
       return new AppError(
         error.response?.data?.error?.message || error.message || 'Infrastructure Error',
@@ -41,7 +51,7 @@ export class ErrorHandler {
       );
     }
 
-    // 3. Handle Zod Validation Errors
+    // 4. Handle Zod Validation Errors
     if (error.name === 'ZodError') {
       return new AppError(
         'Invalid request parameters',
@@ -52,7 +62,7 @@ export class ErrorHandler {
       );
     }
 
-    // 4. Generic Backend Errors
+    // 5. Generic Backend Errors
     return new AppError(
       error.message || 'An unexpected internal error occurred',
       ErrorSource.BACKEND_LOGIC,

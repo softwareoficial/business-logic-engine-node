@@ -56,8 +56,14 @@ class Dispatcher {
     const { func, metadata } = command;
 
     if (context.role !== 'superadmin') {
-      if (metadata.requiredPlan === 'pro' && context.plan !== 'pro') {
-        return ServiceResponseHelper.error('This command requires a PRO plan.', 'PLAN_REQUIRED');
+      const requiredWeight = this.PLAN_WEIGHTS[metadata.requiredPlan] ?? 0;
+      const userWeight = this.PLAN_WEIGHTS[context.plan] ?? 0;
+
+      if (userWeight < requiredWeight) {
+        return ServiceResponseHelper.error(
+          `This command requires a ${metadata.requiredPlan.toUpperCase()} plan.`,
+          'PLAN_REQUIRED',
+        );
       }
     }
 
