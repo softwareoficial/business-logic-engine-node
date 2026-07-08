@@ -192,7 +192,7 @@ class SystemCommandHandler {
       func: async (dataService, context, params) => {
         try {
           return await dataService.executeCustom('CLIENT:user-list', {
-            clienteId: context.tenantId,
+            clienteId: (dataService as any).ensureClientId({ tenantId: context.tenantId }),
           });
         } catch (e: any) {
           return ServiceResponseHelper.error(
