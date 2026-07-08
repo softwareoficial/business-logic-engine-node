@@ -95,6 +95,11 @@ app.get('/', (req: Request, res: Response) => {
       <h2>🛠️ Endpoints Principales</h2>
       
       <div class="endpoint">
+        <span class="method">POST</span> <code>/register</code>
+        <p><strong>¡Empieza aquí!</strong> Crea una cuenta nueva para tu negocio. Recibirás tu <code>clienteId</code> y un <code>token</code> de acceso.</p>
+      </div>
+
+      <div class="endpoint">
         <span class="method">GET</span> <code>/commands</code>
         <p>El "Mapa del Tesoro". Devuelve todos los comandos disponibles, sus parámetros requeridos y ejemplos reales de uso.</p>
       </div>
@@ -113,14 +118,18 @@ app.get('/', (req: Request, res: Response) => {
       <div class="guide">
         <div class="step">
           <div class="step-number">1</div>
-          <div><strong>Descubre:</strong> Haz un <code>GET /commands</code> para ver qué puedes hacer hoy.</div>
+          <div><strong>Regístrate:</strong> Envía un <code>POST /register</code> con tu usuario, contraseña y nombre de empresa.</div>
         </div>
         <div class="step">
           <div class="step-number">2</div>
-          <div><strong>Crea tu Cliente:</strong> Asegúrate de tener un <code>tenantId</code> (UUID) válido para tus peticiones.</div>
+          <div><strong>Obtén tus Credenciales:</strong> Guarda el <code>token</code> y el <code>clienteId</code> (que será tu <code>tenantId</code>).</div>
         </div>
         <div class="step">
           <div class="step-number">3</div>
+          <div><strong>Descubre:</strong> Haz un <code>GET /commands</code> para ver qué puedes hacer hoy.</div>
+        </div>
+        <div class="step">
+          <div class="step-number">4</div>
           <div><strong>Ejecuta:</strong> Envía un JSON a <code>/execute</code> siguiendo este formato:
             <pre style="background: #2c3e50; color: #fff; padding: 1rem; border-radius: 5px; overflow-x: auto;">{
   "cmd": "nombre.del.comando",
@@ -130,7 +139,7 @@ app.get('/', (req: Request, res: Response) => {
           </div>
         </div>
         <div class="step">
-          <div class="step-number">4</div>
+          <div class="step-number">5</div>
           <div><strong>Aprende:</strong> Si recibes un error, revisa el objeto <code>learning_center</code> en la respuesta para ver el ejemplo correcto.</div>
         </div>
       </div>
