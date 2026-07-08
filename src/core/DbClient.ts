@@ -103,11 +103,20 @@ class DbClient implements IDataService {
   }
 
   public ensureClientId(payload: Record<string, any>): number {
-    const id = payload.tenantId || payload.clienteId || '1';
+    const id = payload.tenantId || payload.clienteId;
+
+    if (!id) {
+      throw new Error('Tenant ID is required for database operations');
+    }
 
     if (typeof id === 'number') return id;
 
     const idStr = id.toString().trim();
+
+    // Security: Reject empty/zero UUIDs to prevent global access leaks
+    if (idStr === '00000000-0000-0000-0000-000000000000' || idStr === '0') {
+      throw new Error('Invalid Tenant ID: Global access via zero-UUID is forbidden');
+    }
 
     // If it's a simple numeric string, parse it directly
     if (/^\d+$/.test(idStr)) {
@@ -115,20 +124,22 @@ class DbClient implements IDataService {
       return isNaN(parsed) ? 1 : parsed;
     }
 
-    // For UUIDs or other strings, use a simple deterministic hash to keep it within a safe integer range (e.g., 32-bit signed int)
+    // For UUIDs or other strings, use a simple deterministic hash
     let hash = 0;
     for (let i = 0; i < idStr.length; i++) {
       const char = idStr.charCodeAt(i);
       hash = (hash << 5) - hash + char;
-      hash |= 0; // Convert to 32bit integer
+      hash |= 0;
     }
 
-    // Ensure the result is positive and within a reasonable range for the backend
     return (Math.abs(hash) % 1000000) + 1;
   }
 
   async read(path?: string, context?: { tenantId: string }): Promise<ServiceResponse> {
-    const clienteId = context ? this.ensureClientId({ tenantId: context.tenantId }) : 1;
+    if (!context?.tenantId) {
+      return ServiceResponseHelper.error('Tenant ID is required', 'MISSING_TENANT');
+    }
+    const clienteId = this.ensureClientId({ tenantId: context.tenantId });
     const command = path ? 'USER:read-path' : 'USER:read';
     const payload = path ? { clienteId, path } : { clienteId };
 
@@ -151,7 +162,10 @@ class DbClient implements IDataService {
     options?: { limit?: number; offset?: number },
     context?: { tenantId: string },
   ): Promise<ServiceResponse> {
-    const clienteId = context ? this.ensureClientId({ tenantId: context.tenantId }) : 1;
+    if (!context?.tenantId) {
+      return ServiceResponseHelper.error('Tenant ID is required', 'MISSING_TENANT');
+    }
+    const clienteId = this.ensureClientId({ tenantId: context.tenantId });
     const payload: any = { clienteId, path, filter };
     if (options?.limit) payload.limit = options.limit;
     if (options?.offset) payload.offset = options.offset;
