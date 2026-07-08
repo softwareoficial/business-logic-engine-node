@@ -40,14 +40,19 @@ class SalesCommandHandler {
               context,
             );
 
-            if (!findRes.success || !findRes.data || findRes.data.length === 0) {
+            if (
+              !findRes.success ||
+              !findRes.data ||
+              !findRes.data.results ||
+              findRes.data.results.length === 0
+            ) {
               return ServiceResponseHelper.error(
                 `Product ${item.code} not found`,
                 'STOCK_NOT_FOUND',
               );
             }
 
-            const product = findRes.data[0];
+            const product = findRes.data.results[0];
             const currentQuantity = parseInt(product.quantity);
             const requestedQuantity = parseInt(item.quantity);
 
