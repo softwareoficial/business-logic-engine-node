@@ -33,17 +33,22 @@ class SalesCommandHandler {
 
           // 1. Validate and deduct stock for each item
           for (const item of items) {
-            const productPath = `products[code=${item.code}].quantity`;
-            const currentStockRes = await dataService.read(productPath, context);
+            const findRes = await dataService.find(
+              'products',
+              { code: item.code },
+              { limit: 1 },
+              context,
+            );
 
-            if (!currentStockRes.success || !currentStockRes.data) {
+            if (!findRes.success || !findRes.data || findRes.data.length === 0) {
               return ServiceResponseHelper.error(
-                `Product ${item.code} not found or stock inaccessible`,
+                `Product ${item.code} not found`,
                 'STOCK_NOT_FOUND',
               );
             }
 
-            const currentQuantity = parseInt(currentStockRes.data);
+            const product = findRes.data[0];
+            const currentQuantity = parseInt(product.quantity);
             const requestedQuantity = parseInt(item.quantity);
 
             if (currentQuantity < requestedQuantity) {
@@ -54,7 +59,7 @@ class SalesCommandHandler {
             }
 
             const newQuantity = currentQuantity - requestedQuantity;
-            await dataService.write(productPath, newQuantity, context);
+            await dataService.write(`products[code=${item.code}].quantity`, newQuantity, context);
           }
 
           // 2. Register the sale in the 'sales' array
