@@ -39,22 +39,12 @@ app.post('/register', async (req: Request, res: Response) => {
   try {
     const validatedData = RegisterSchema.parse(req.body);
 
-    // We use the dispatcher to call the infrastructure's registration logic
-    // Since this is a global system action, we pass a dummy or system context
-    const result = await dispatcher.execute(
-      'APP:self-register',
-      {
-        username: validatedData.username,
-        password: validatedData.password,
-        nombreCliente: validatedData.nombreCliente,
-      },
-      {
-        tenantId: '00000000-0000-0000-0000-000000000000', // System context for registration
-        userId: '00000000-0000-0000-0000-000000000000',
-        role: 'admin',
-        plan: 'free',
-      },
-    );
+    // Call the infrastructure engine directly via dbClient
+    const result = await dbClient.execute('APP:self-register', {
+      username: validatedData.username,
+      password: validatedData.password,
+      nombreCliente: validatedData.nombreCliente,
+    });
 
     if (!result.success) {
       return res.status(400).json(result);
@@ -63,7 +53,7 @@ app.post('/register', async (req: Request, res: Response) => {
     res.status(201).json({
       success: true,
       message: 'Account created successfully',
-      data: result.data, // Should contain clienteId and token
+      data: result.data,
     });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
