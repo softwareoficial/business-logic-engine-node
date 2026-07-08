@@ -13,7 +13,7 @@ import { ExampleGenerator } from './core/ExampleGenerator';
 const CommandRequestSchema = z.object({
   cmd: z.string(),
   params: z.record(z.string(), z.any()).optional().default({}),
-  tenantId: z.string().uuid(),
+  tenantId: z.union([z.string().uuid(), z.string().regex(/^\\d+$/)]),
   userId: z.string().uuid().optional(),
   role: z.string().default('employee'),
   plan: z.string().default('free'),
@@ -122,7 +122,7 @@ app.get('/', (req: Request, res: Response) => {
         </div>
         <div class="step">
           <div class="step-number">2</div>
-          <div><strong>Obtén tus Credenciales:</strong> Guarda el <code>token</code> y el <code>clienteId</code> (que será tu <code>tenantId</code>).</div>
+          <div><strong>Obtén tus Credenciales:</strong> Guarda el <code>token</code> y el <code>clienteId</code>. Este ID (ya sea un número o un UUID) es el que usarás como <code>tenantId</code> en tus peticiones.</div>
         </div>
         <div class="step">
           <div class="step-number">3</div>
