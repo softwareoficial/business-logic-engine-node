@@ -157,7 +157,6 @@ app.get('/health', async (req: Request, res: Response) => {
   res.json({
     status: 'online',
     db_connected: dbClient.getConnected(),
-    db_url: dbClient.getUrl(),
   });
 });
 
