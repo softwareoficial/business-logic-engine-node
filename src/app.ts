@@ -5,6 +5,8 @@ import { z } from 'zod';
 import { dispatcher } from './core/Dispatcher';
 import { dbClient } from './core/DbClient';
 import { RequestContext } from './core/RequestContext';
+import { ErrorHandler } from './core/ErrorHandler';
+import { logger } from './core/Logger';
 
 // --- Validation Schemas ---
 const CommandRequestSchema = z.object({
@@ -34,6 +36,7 @@ app.get('/health', async (req: Request, res: Response) => {
 });
 
 app.post('/execute', async (req: Request, res: Response) => {
+    const startTime = Date.now();
     try {
         const validatedData = CommandRequestSchema.parse(req.body);
         
@@ -50,22 +53,44 @@ app.post('/execute', async (req: Request, res: Response) => {
             context
         );
 
+        const duration = Date.now() - startTime;
+        
+        // Log the event to the database (Fire and forget to not block response)
+        dispatcher.execute("SYSTEM:log-event", {
+            tenantId: validatedData.tenantId,
+            userId: validatedData.userId,
+            command: validatedData.cmd,
+            status: "SUCCESS",
+            duration: duration,
+            userAgent: req.headers['user-agent'] || 'unknown',
+            clientType: req.body.clientType || 'unknown'
+        }, context).catch(err => console.error("Event logging failed:", err));
+
+        logger.info(`Command executed successfully: ${validatedData.cmd}`, {
+            tenantId: context.tenantId,
+            userId: context.userId
+        });
+
         res.json(result);
     } catch (error: any) {
-        if (error instanceof z.ZodError) {
-            res.status(400).json({ 
-                success: false, 
-                message: "Invalid request data", 
-                errors: error.issues 
-            });
+        const duration = Date.now() - startTime;
+        const appError = ErrorHandler.handle(error);
+        const formattedResponse = ErrorHandler.formatResponse(appError);
+        
+        // Log the error event to the database
+        dispatcher.execute("SYSTEM:log-event", {
+            tenantId: req.body?.tenantId || 'unknown',
+            userId: req.body?.userId || 'unknown',
+            command: req.body?.cmd || 'unknown',
+            status: "ERROR",
+            duration: duration,
+            source: appError.source,
+            errorCode: appError.code,
+            userAgent: req.headers['user-agent'] || 'unknown',
+            clientType: req.body?.clientType || 'unknown'
+        }, context).catch(err => console.error("Event logging failed:", err));
 
-        } else {
-            console.error(`Unexpected error executing command:`, error);
-            res.status(500).json({ 
-                success: false, 
-                message: error.message || "Internal server error" 
-            });
-        }
+        res.status(appError.statusCode).json(formattedResponse);
     }
 });
 
