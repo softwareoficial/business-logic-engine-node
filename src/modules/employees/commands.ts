@@ -82,6 +82,7 @@ class EmployeeCommandHandler {
               name,
               role,
               type,
+              tenantId: (dataService as any).ensureClientId({ tenantId: context.tenantId }),
             },
             context,
           );
@@ -198,8 +199,8 @@ class EmployeeCommandHandler {
       metadata: { requiredPlan: 'free' },
       func: async (dataService, context, params) => {
         try {
-          const res = await dataService.executeCustom('GET_STAFF_PERFORMANCE_REPORT', {
-            tenant_id: context.tenantId,
+          const res = await dataService.executeCustom('MONITOR:get-client-report', {
+            clienteId: (dataService as any).ensureClientId({ tenantId: context.tenantId }),
           });
           return res && typeof res === 'object' && 'success' in res
             ? res

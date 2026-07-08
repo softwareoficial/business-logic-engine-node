@@ -161,7 +161,7 @@ class SalesCommandHandler {
           const res = await dataService.executeCustom('CONFIRM_SALE_PAYMENT', {
             sale_id: sale_id,
             user_id: context.userId,
-            tenant_id: context.tenantId,
+            tenantId: (dataService as any).ensureClientId({ tenantId: context.tenantId }),
           });
 
           if (!res.success) {

@@ -62,7 +62,7 @@ class Dispatcher {
       await this.dataService.execute('SYSTEM:log-event', {
         tenantId: numericTenantId,
         status: status,
-        source: 'BACKEND_LOGIC',
+        source: 'BACKEND',
         command: command,
         userId: context.userId ? 1 : undefined, // Infrastructure expects numeric userId if provided
         ...details,

@@ -122,8 +122,8 @@ class EmployeeEngine {
    */
   public async getPerformanceReport(dataService: IDataService, tenantId: string): Promise<any[]> {
     try {
-      const res = await dataService.executeCustom('GET_STAFF_PERFORMANCE_REPORT', {
-        tenant_id: tenantId,
+      const res = await dataService.executeCustom('MONITOR:get-client-report', {
+        clienteId: (dataService as any).ensureClientId({ tenantId }),
       });
 
       return res.success ? res.data || [] : [];
