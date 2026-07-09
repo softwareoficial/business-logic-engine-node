@@ -80,12 +80,17 @@ class DbClient implements IDataService {
     }
     if (typeof data === 'object') {
       const normalized: Record<string, any> = {};
+      const numericFields = ['price', 'quantity', 'total', 'subtotal', 'amount'];
+
       for (const [key, value] of Object.entries(data)) {
         if (
           (key === 'clienteId' || key === 'tenantId' || key === 'tenant_id') &&
           typeof value === 'number'
         ) {
           normalized[key] = this.toExternalId(value);
+        } else if (numericFields.includes(key)) {
+          const numValue = Number(value);
+          normalized[key] = isNaN(numValue) ? 0 : numValue;
         } else {
           normalized[key] = this.normalizeResponseData(value);
         }
