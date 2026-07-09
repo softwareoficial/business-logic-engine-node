@@ -49,7 +49,27 @@ class StockCommandHandler {
       func: async (dataService, context, params) => {
         try {
           const { code, name, price, quantity, category, is_weight } = params;
-          // Use push to add a new product to the array
+
+          // 1. Check if product code already exists for this tenant
+          const existingProduct = await dataService.find(
+            'products',
+            { code },
+            { limit: 1 },
+            context,
+          );
+
+          if (
+            existingProduct.success &&
+            existingProduct.data &&
+            existingProduct.data.results?.length > 0
+          ) {
+            return ServiceResponseHelper.error(
+              `Product with code ${code} already exists. Please use a unique code or update the existing product.`,
+              'PRODUCT_EXISTS',
+            );
+          }
+
+          // 2. Use push to add a new product to the array
           return await dataService.push(
             'products',
             {
