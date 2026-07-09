@@ -50,7 +50,21 @@ class StockCommandHandler {
         try {
           const { code, name, price, quantity, category, is_weight } = params;
 
-          // 1. Check if product code already exists for this tenant
+          // 1. Strict Validation
+          if (price < 0 || quantity < 0) {
+            return ServiceResponseHelper.error(
+              'Price and quantity cannot be negative.',
+              'VALIDATION_ERROR',
+            );
+          }
+
+          // Force is_weight to boolean
+          const normalizedIsWeight =
+            typeof is_weight === 'boolean'
+              ? is_weight
+              : is_weight === 'true' || is_weight === 'yes' || is_weight === 1;
+
+          // 2. Check if product code already exists for this tenant
           const existingProduct = await dataService.find(
             'products',
             { code },
@@ -69,7 +83,7 @@ class StockCommandHandler {
             );
           }
 
-          // 2. Use push to add a new product to the array
+          // 3. Use push to add a new product to the array
           return await dataService.push(
             'products',
             {
@@ -78,7 +92,7 @@ class StockCommandHandler {
               price,
               quantity,
               category,
-              is_weight,
+              is_weight: normalizedIsWeight,
             },
             context,
           );

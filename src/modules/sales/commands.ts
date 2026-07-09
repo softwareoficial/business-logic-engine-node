@@ -31,7 +31,22 @@ class SalesCommandHandler {
         try {
           const { customer_phone, items, paga_con } = params;
 
-          // 1. Validate and deduct stock for each item
+          // 1. Strict Validation
+          if (!items || !Array.isArray(items) || items.length === 0) {
+            return ServiceResponseHelper.error(
+              'The items list cannot be empty. Please add at least one product to the sale.',
+              'VALIDATION_ERROR',
+            );
+          }
+
+          if (paga_con < 0) {
+            return ServiceResponseHelper.error(
+              'Payment amount cannot be negative.',
+              'VALIDATION_ERROR',
+            );
+          }
+
+          // 2. Validate and deduct stock for each item
           for (const item of items) {
             const findRes = await dataService.find(
               'products',
