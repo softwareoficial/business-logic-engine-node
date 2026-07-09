@@ -119,6 +119,22 @@ class DbClient implements IDataService {
           this.normalizeResponseData(result.data),
         );
       } else {
+        // --- INTERCEPTOR: Developer Friendly Path Errors ---
+        const isPathCommand = command === 'USER:update-path' || command === 'USER:read-path';
+        const isPathError =
+          result.error?.code === 'INVALID_PAYLOAD' || result.error?.code === 'PATH_NOT_FOUND';
+        const path = payload.path || '';
+        const hasFilters = path.includes('[') && path.includes(']');
+
+        if (isPathCommand && isPathError && hasFilters) {
+          return ServiceResponseHelper.error(
+            "La ruta proporcionada no es válida. Usa rutas simples separadas por puntos (ej: 'settings.theme'). No se admiten filtros como '[code=...]' en el path. Para actualizar un item específico, primero obtén su índice con 'USER:query-json'.",
+            'INVALID_PATH_FORMAT',
+            // Adding details to the error response if the helper supports it or via the message
+          );
+        }
+        // ---------------------------------------------------
+
         return ServiceResponseHelper.error(
           result.error?.message || 'API Error',
           result.error?.code || 'API_ERROR',
