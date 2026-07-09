@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
+import sanitizeHtml from 'sanitize-html';
 import { dispatcher } from './core/Dispatcher';
 import { dbClient } from './core/DbClient';
 import { RequestContext } from './core/RequestContext';
@@ -32,6 +33,65 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+// --- Security Middlewares ---
+
+const sanitizationMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  const sanitizeValue = (val: any): any => {
+    if (typeof val === 'string') return sanitizeHtml(val);
+    if (Array.isArray(val)) return val.map(sanitizeValue);
+    if (typeof val === 'object' && val !== null) {
+      const sanitized: Record<string, any> = {};
+      for (const [k, v] of Object.entries(val)) sanitized[k] = sanitizeValue(v);
+      return sanitized;
+    }
+    return val;
+  };
+
+  if (req.body) {
+    req.body = sanitizeValue(req.body);
+  }
+  next();
+};
+
+const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({
+      success: false,
+      message:
+        'Authentication required. Please provide a valid Bearer token in the Authorization header.',
+      code: 'UNAUTHORIZED',
+    });
+  }
+
+  const token = authHeader.split(' ')[1];
+
+  try {
+    // Validate token using the Infrastructure Engine.
+    // The infra engine now handles the tenant identity automatically via the token.
+    const authRes = await dbClient.execute('USER:verify-token', {
+      token,
+    });
+
+    if (!authRes.success) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access forbidden. The provided token is not valid.',
+        code: 'FORBIDDEN',
+      });
+    }
+
+    // Attach authenticated user and token to the request for subsequent use
+    (req as any).user = authRes.data;
+    (req as any).userToken = token;
+    next();
+  } catch (error: any) {
+    res
+      .status(500)
+      .json({ success: false, message: 'Security validation failed', error: error.message });
+  }
+};
 
 // --- Endpoints ---
 
@@ -192,90 +252,95 @@ app.get('/commands', (req: Request, res: Response) => {
   });
 });
 
-app.post('/execute', async (req: Request, res: Response) => {
-  const startTime = Date.now();
-  try {
-    const validatedData = CommandRequestSchema.parse(req.body);
+app.post(
+  '/execute',
+  sanitizationMiddleware,
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    const startTime = Date.now();
+    try {
+      const validatedData = CommandRequestSchema.parse(req.body);
 
-    const context: RequestContext = {
-      tenantId: validatedData.tenantId,
-      userId: validatedData.userId,
-      role: validatedData.role,
-      plan: validatedData.plan,
-      source: req.body.source || 'FRONTEND',
-      appId: req.body.appId || 'web-client',
-      userAgent: req.headers['user-agent'] || 'unknown',
-      ipAddress: Array.isArray(req.headers['x-forwarded-for'])
-        ? req.headers['x-forwarded-for'][0]
-        : ((req.headers['x-forwarded-for'] ||
-            req.ip ||
-            req.socket.remoteAddress ||
-            'unknown') as string),
-      requestId: Array.isArray(req.headers['x-request-id'])
-        ? req.headers['x-request-id'][0]
-        : ((req.headers['x-request-id'] || crypto.randomUUID()) as string),
-    };
-
-    const result = await dispatcher.execute(validatedData.cmd, validatedData.params, context);
-
-    if (result.success === false) {
-      throw result;
-    }
-
-    const duration = Date.now() - startTime;
-
-    dispatcher
-      .logEvent(context, validatedData.cmd, 'SUCCESS', {
-        duration,
-        clientType: req.body.clientType || 'unknown',
-      })
-      .catch((err) => console.error('Event logging failed:', err));
-
-    logger.info(`Command executed successfully: ${validatedData.cmd}`, {
-      tenantId: context.tenantId,
-      userId: context.userId,
-    });
-
-    res.json(result);
-  } catch (error: any) {
-    const duration = Date.now() - startTime;
-    const appError = ErrorHandler.handle(error);
-    const formattedResponse = ErrorHandler.formatResponse(appError);
-
-    const attemptedCmd = req.body?.cmd;
-    const metadata = attemptedCmd ? dispatcher.getCommandMetadata(attemptedCmd) : null;
-
-    if (metadata) {
-      formattedResponse.learning_center = {
-        command: attemptedCmd,
-        goal: metadata.description,
-        expected_params: metadata.paramsModel,
-        correct_example: {
-          cmd: attemptedCmd,
-          params: ExampleGenerator.generate(metadata.paramsModel),
-        },
+      const context: RequestContext = {
+        tenantId: validatedData.tenantId,
+        userId: (req as any).user?.userId || validatedData.userId,
+        role: (req as any).user?.role || validatedData.role,
+        plan: (req as any).user?.plan || validatedData.plan,
+        source: req.body.source || 'FRONTEND',
+        appId: req.body.appId || 'web-client',
+        userAgent: req.headers['user-agent'] || 'unknown',
+        ipAddress: Array.isArray(req.headers['x-forwarded-for'])
+          ? req.headers['x-forwarded-for'][0]
+          : ((req.headers['x-forwarded-for'] ||
+              req.ip ||
+              req.socket.remoteAddress ||
+              'unknown') as string),
+        requestId: Array.isArray(req.headers['x-request-id'])
+          ? req.headers['x-request-id'][0]
+          : ((req.headers['x-request-id'] || crypto.randomUUID()) as string),
       };
+
+      const result = await dispatcher.execute(validatedData.cmd, validatedData.params, context);
+
+      if (result.success === false) {
+        throw result;
+      }
+
+      const duration = Date.now() - startTime;
+
+      dispatcher
+        .logEvent(context, validatedData.cmd, 'SUCCESS', {
+          duration,
+          clientType: req.body.clientType || 'unknown',
+        })
+        .catch((err) => console.error('Event logging failed:', err));
+
+      logger.info(`Command executed successfully: ${validatedData.cmd}`, {
+        tenantId: context.tenantId,
+        userId: context.userId,
+      });
+
+      res.json(result);
+    } catch (error: any) {
+      const duration = Date.now() - startTime;
+      const appError = ErrorHandler.handle(error);
+      const formattedResponse = ErrorHandler.formatResponse(appError);
+
+      const attemptedCmd = req.body?.cmd;
+      const metadata = attemptedCmd ? dispatcher.getCommandMetadata(attemptedCmd) : null;
+
+      if (metadata) {
+        formattedResponse.learning_center = {
+          command: attemptedCmd,
+          goal: metadata.description,
+          expected_params: metadata.paramsModel,
+          correct_example: {
+            cmd: attemptedCmd,
+            params: ExampleGenerator.generate(metadata.paramsModel),
+          },
+        };
+      }
+
+      const errorContext: RequestContext = {
+        tenantId: req.body?.tenantId || 'unknown',
+        userId: req.body?.userId || 'unknown',
+        role: 'unknown',
+        plan: 'unknown',
+        source: req.body?.source || 'FRONTEND',
+        requestId: crypto.randomUUID(),
+      };
+
+      dispatcher
+        .logEvent(errorContext, req.body?.cmd || 'unknown', 'ERROR', {
+          duration,
+          source: appError.source,
+          errorCode: appError.code,
+        })
+        .catch((err) => console.error('Event logging failed:', err));
+
+      res.status(appError.statusCode).json(formattedResponse);
     }
-
-    const errorContext: RequestContext = {
-      tenantId: req.body?.tenantId || 'unknown',
-      userId: req.body?.userId || 'unknown',
-      role: 'unknown',
-      plan: 'unknown',
-      source: req.body?.source || 'FRONTEND',
-      requestId: crypto.randomUUID(),
-    };
-
-    dispatcher
-      .logEvent(errorContext, req.body?.cmd || 'unknown', 'ERROR', {
-        duration,
-        source: appError.source,
-        errorCode: appError.code,
-      })
-      .catch((err) => console.error('Event logging failed:', err));
-
-    res.status(appError.statusCode).json(formattedResponse);
-  }
-});
+  },
+);
 
 export default app;
