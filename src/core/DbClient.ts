@@ -73,16 +73,16 @@ class DbClient implements IDataService {
     return `00000000-0000-0000-0000-${numericId.toString().padStart(12, '0')}`;
   }
 
-  private normalizeResponseData(data: any): any {
+  private normalizeResponseData(data: unknown): unknown {
     if (data === null || data === undefined) return data;
     if (Array.isArray(data)) {
       return data.map((item) => this.normalizeResponseData(item));
     }
     if (typeof data === 'object') {
-      const normalized: Record<string, any> = {};
+      const normalized: Record<string, unknown> = {};
       const numericFields = ['price', 'quantity', 'total', 'subtotal', 'amount'];
 
-      for (const [key, value] of Object.entries(data)) {
+      for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
         if (
           (key === 'clienteId' || key === 'tenantId' || key === 'tenant_id') &&
           typeof value === 'number'
@@ -100,7 +100,10 @@ class DbClient implements IDataService {
     return data;
   }
 
-  async execute(command: string, payload: Record<string, any>): Promise<ServiceResponse> {
+  async execute<T = unknown>(
+    command: string,
+    payload: Record<string, unknown>,
+  ): Promise<ServiceResponse<T>> {
     if (!this.isConnected || !this.httpClient || !this.adminToken) {
       return ServiceResponseHelper.error(
         'DB not configured or disconnected',
@@ -119,9 +122,9 @@ class DbClient implements IDataService {
 
       // The API returns { status: "success" | "error", data: ..., error: ... }
       if (result.status === 'success') {
-        return ServiceResponseHelper.success(
+        return ServiceResponseHelper.success<T>(
           result.message || 'Operation successful',
-          this.normalizeResponseData(result.data),
+          this.normalizeResponseData(result.data) as T,
         );
       } else {
         return ServiceResponseHelper.error(
@@ -129,16 +132,27 @@ class DbClient implements IDataService {
           result.error?.code || 'API_ERROR',
         );
       }
-    } catch (e: any) {
-      console.error(`API Execution Error [${command}]:`, e.response?.data || e.message);
+    } catch (e: unknown) {
+      if (axios.isAxiosError(e)) {
+        const axiosError = e;
+        console.error(
+          `API Execution Error [${command}]:`,
+          axiosError.response?.data || (e as Error).message,
+        );
+        return ServiceResponseHelper.error(
+          axiosError.response?.data?.error?.message || (e as Error).message || 'Internal API Error',
+          axiosError.response?.data?.error?.code || 'INTERNAL_ERROR',
+        );
+      }
+      console.error(`API Execution Error [${command}]:`, (e as Error).message);
       return ServiceResponseHelper.error(
-        e.response?.data?.error?.message || e.message || 'Internal API Error',
-        e.response?.data?.error?.code || 'INTERNAL_ERROR',
+        (e as Error).message || 'Internal API Error',
+        'INTERNAL_ERROR',
       );
     }
   }
 
-  public ensureClientId(payload: Record<string, any>): number {
+  public ensureClientId(payload: Record<string, unknown>): number {
     const id = payload.tenantId || payload.clienteId;
 
     if (!id) {
@@ -177,7 +191,10 @@ class DbClient implements IDataService {
     return (Math.abs(hash) % 1000000) + 1;
   }
 
-  async read(path?: string, context?: { tenantId: string }): Promise<ServiceResponse> {
+  async read<T = unknown>(
+    path?: string,
+    context?: { tenantId: string },
+  ): Promise<ServiceResponse<T>> {
     if (!context?.tenantId) {
       return ServiceResponseHelper.error('Tenant ID is required', 'MISSING_TENANT');
     }
@@ -185,38 +202,45 @@ class DbClient implements IDataService {
     const command = path ? 'USER:read-path' : 'USER:read';
     const payload = path ? { clienteId, path } : { clienteId };
 
-    return this.execute(command, payload);
+    return this.execute<T>(command, payload);
   }
 
-  async write(path: string, value: any, context: { tenantId: string }): Promise<ServiceResponse> {
+  async write(
+    path: string,
+    value: unknown,
+    context: { tenantId: string },
+  ): Promise<ServiceResponse> {
     const clienteId = this.ensureClientId({ tenantId: context.tenantId });
     return this.execute('USER:update-path', { clienteId, path, value });
   }
 
-  async push(path: string, item: any, context: { tenantId: string }): Promise<ServiceResponse> {
+  async push(path: string, item: unknown, context: { tenantId: string }): Promise<ServiceResponse> {
     const clienteId = this.ensureClientId({ tenantId: context.tenantId });
     return this.execute('USER:push-item', { clienteId, path, item });
   }
 
-  async find(
+  async find<T = unknown>(
     path: string,
-    filter: Record<string, any>,
+    filter: Record<string, unknown>,
     options?: { limit?: number; offset?: number },
     context?: { tenantId: string },
-  ): Promise<ServiceResponse> {
+  ): Promise<ServiceResponse<T[]>> {
     if (!context?.tenantId) {
       return ServiceResponseHelper.error('Tenant ID is required', 'MISSING_TENANT');
     }
     const clienteId = this.ensureClientId({ tenantId: context.tenantId });
-    const payload: any = { clienteId, path, filter };
+    const payload: Record<string, unknown> = { clienteId, path, filter };
     if (options?.limit) payload.limit = options.limit;
     if (options?.offset) payload.offset = options.offset;
 
-    return this.execute('USER:query-json', payload);
+    return this.execute<T[]>('USER:query-json', payload);
   }
 
-  async executeCustom(command: string, payload: Record<string, any>): Promise<ServiceResponse> {
-    return this.execute(command, payload);
+  async executeCustom<T = unknown>(
+    command: string,
+    payload: Record<string, unknown>,
+  ): Promise<ServiceResponse<T>> {
+    return this.execute<T>(command, payload);
   }
 }
 

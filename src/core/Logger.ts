@@ -21,7 +21,7 @@ export interface LogEvent {
   level: LogLevel;
   source: ErrorSource;
   message: string;
-  context?: any;
+  context?: unknown;
   requestId?: string;
 }
 
@@ -58,23 +58,23 @@ class Logger extends EventEmitter {
     }
   }
 
-  public info(message: string, context?: any) {
+  public info(message: string, context?: unknown) {
     this.emit('log', this.createEvent(LogLevel.INFO, ErrorSource.BACKEND_LOGIC, message, context));
   }
 
-  public warn(message: string, context?: any) {
+  public warn(message: string, context?: unknown) {
     this.emit('log', this.createEvent(LogLevel.WARN, ErrorSource.BACKEND_LOGIC, message, context));
   }
 
-  public error(message: string, source: ErrorSource, context?: any) {
+  public error(message: string, source: ErrorSource, context?: unknown) {
     this.emit('log', this.createEvent(LogLevel.ERROR, source, message, context));
   }
 
-  public critical(message: string, source: ErrorSource, context?: any) {
+  public critical(message: string, source: ErrorSource, context?: unknown) {
     this.emit('log', this.createEvent(LogLevel.CRITICAL, source, message, context));
   }
 
-  public debug(message: string, context?: any) {
+  public debug(message: string, context?: unknown) {
     this.emit('log', this.createEvent(LogLevel.DEBUG, ErrorSource.BACKEND_LOGIC, message, context));
   }
 
@@ -82,7 +82,7 @@ class Logger extends EventEmitter {
     level: LogLevel,
     source: ErrorSource,
     message: string,
-    context?: any,
+    context?: unknown,
   ): LogEvent {
     return {
       timestamp: new Date().toISOString(),

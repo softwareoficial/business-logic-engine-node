@@ -8,7 +8,7 @@ export interface CommandDefinition {
   func: (
     dataService: IDataService,
     context: RequestContext,
-    params: any,
+    params: Record<string, unknown>,
   ) => Promise<ServiceResponse>;
   metadata: {
     requiredPlan: string;
@@ -24,8 +24,8 @@ class EmployeeCommandHandler {
       metadata: { requiredPlan: 'free' },
       func: async (dataService, context, params) => {
         try {
-          const { def_type, def_key, def_label } = params;
-          if (!['permission', 'goal_type', 'task'].includes(def_type)) {
+          const { def_type, def_key, def_label } = params as Record<string, unknown>;
+          if (!['permission', 'goal_type', 'task'].includes(def_type as string)) {
             return ServiceResponseHelper.error(
               "Invalid type. Must be 'permission', 'goal_type', or 'task'.",
               'INVALID_TYPE',
@@ -46,8 +46,11 @@ class EmployeeCommandHandler {
           return ServiceResponseHelper.success(
             `Term ${def_label} (${def_type}) defined successfully.`,
           );
-        } catch (e: any) {
-          return ServiceResponseHelper.error(e.message || 'Error defining term', 'DEF_TERM_ERROR');
+        } catch (e: unknown) {
+          return ServiceResponseHelper.error(
+            e instanceof Error ? e.message : 'Error defining term',
+            'DEF_TERM_ERROR',
+          );
         }
       },
     },
@@ -64,8 +67,8 @@ class EmployeeCommandHandler {
       metadata: { requiredPlan: 'free' },
       func: async (dataService, context, params) => {
         try {
-          const { name, role, type, user_id, bot_profile_id } = params;
-          if (!['human', 'bot'].includes(type)) {
+          const { name, role, type, user_id, bot_profile_id } = params as Record<string, unknown>;
+          if (!['human', 'bot'].includes(type as string)) {
             return ServiceResponseHelper.error(
               "Invalid type. Must be 'human' or 'bot'.",
               'INVALID_TYPE',
@@ -82,7 +85,7 @@ class EmployeeCommandHandler {
               name,
               role,
               type,
-              tenantId: (dataService as any).ensureClientId({ tenantId: context.tenantId }),
+              tenantId: dataService.ensureClientId({ tenantId: context.tenantId }),
             },
             context,
           );
@@ -92,9 +95,9 @@ class EmployeeCommandHandler {
             `Employee ${name} created successfully as ${type}.`,
             { employee_id: employeeId },
           );
-        } catch (e: any) {
+        } catch (e: unknown) {
           return ServiceResponseHelper.error(
-            e.message || 'Error creating employee',
+            e instanceof Error ? e.message : 'Error creating employee',
             'STAFF_CREATE_ERROR',
           );
         }
@@ -111,7 +114,7 @@ class EmployeeCommandHandler {
       metadata: { requiredPlan: 'free' },
       func: async (dataService, context, params) => {
         try {
-          const { employee_id, permission_key, granted } = params;
+          const { employee_id, permission_key, granted } = params as Record<string, unknown>;
 
           const empRes = await dataService.find('employees', { id: employee_id }, {}, context);
           if (!empRes.success || !empRes.data || empRes.data.length === 0) {
@@ -147,9 +150,9 @@ class EmployeeCommandHandler {
           return ServiceResponseHelper.success(
             `Permission ${permission_key} updated for employee.`,
           );
-        } catch (e: any) {
+        } catch (e: unknown) {
           return ServiceResponseHelper.error(
-            e.message || 'Error setting permission',
+            e instanceof Error ? e.message : 'Error setting permission',
             'PERM_SET_ERROR',
           );
         }
@@ -168,7 +171,10 @@ class EmployeeCommandHandler {
       metadata: { requiredPlan: 'free' },
       func: async (dataService, context, params) => {
         try {
-          const { employee_id, goal_type, target, start_date, end_date } = params;
+          const { employee_id, goal_type, target, start_date, end_date } = params as Record<
+            string,
+            unknown
+          >;
           const res = await dataService.write(
             `employee_goals[employee_id=${employee_id},goal_type=${goal_type}]`,
             {
@@ -182,13 +188,16 @@ class EmployeeCommandHandler {
           if (!res.success) {
             return ServiceResponseHelper.error(
               `Goal setting failed: ${res.message}`,
-              res.data?.error_code || 'GOAL_SET_ERROR',
+              (res.data as any)?.error_code || 'GOAL_SET_ERROR',
             );
           }
 
           return ServiceResponseHelper.success('Performance goal set successfully.');
-        } catch (e: any) {
-          return ServiceResponseHelper.error(e.message || 'Error setting goal', 'GOAL_SET_ERROR');
+        } catch (e: unknown) {
+          return ServiceResponseHelper.error(
+            e instanceof Error ? e.message : 'Error setting goal',
+            'GOAL_SET_ERROR',
+          );
         }
       },
     },
@@ -197,16 +206,20 @@ class EmployeeCommandHandler {
       description: 'Retrieves the general performance report for all staff.',
       paramsModel: {},
       metadata: { requiredPlan: 'free' },
-      func: async (dataService, context, params) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      func: async (dataService, context, _params) => {
         try {
           const res = await dataService.executeCustom('MONITOR:get-client-report', {
-            clienteId: (dataService as any).ensureClientId({ tenantId: context.tenantId }),
+            clienteId: dataService.ensureClientId({ tenantId: context.tenantId }),
           });
           return res && typeof res === 'object' && 'success' in res
             ? res
             : ServiceResponseHelper.success('Report retrieved', res);
-        } catch (e: any) {
-          return ServiceResponseHelper.error(e.message || 'Error getting report', 'REPORT_ERROR');
+        } catch (e: unknown) {
+          return ServiceResponseHelper.error(
+            e instanceof Error ? e.message : 'Error getting report',
+            'REPORT_ERROR',
+          );
         }
       },
     },

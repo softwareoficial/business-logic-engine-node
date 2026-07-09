@@ -1,14 +1,12 @@
-import { CommandMetadata } from './Dispatcher';
-
 export class ExampleGenerator {
   /**
    * Generates a realistic example payload based on a parameter model.
    * @param paramsModel Record mapping field names to types (e.g., { name: 'string', age: 'int' })
    */
-  public static generate(paramsModel?: Record<string, string>): Record<string, any> {
+  public static generate(paramsModel?: Record<string, string>): Record<string, unknown> {
     if (!paramsModel) return {};
 
-    const example: Record<string, any> = {};
+    const example: Record<string, unknown> = {};
 
     for (const [key, type] of Object.entries(paramsModel)) {
       example[key] = this.getValueForType(type, key);
@@ -17,7 +15,7 @@ export class ExampleGenerator {
     return example;
   }
 
-  private static getValueForType(type: string, key: string): any {
+  private static getValueForType(type: string, key: string): unknown {
     const lowerType = type.toLowerCase();
 
     if (lowerType === 'string') {

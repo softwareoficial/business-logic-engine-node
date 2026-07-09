@@ -9,7 +9,7 @@ export interface CommandDefinition {
   func: (
     dataService: IDataService,
     context: RequestContext,
-    params: any,
+    params: Record<string, unknown>,
   ) => Promise<ServiceResponse>;
   metadata: {
     requiredPlan: string;
@@ -29,7 +29,7 @@ class SalesCommandHandler {
       metadata: { requiredPlan: 'free' },
       func: async (dataService, context, params) => {
         try {
-          const { customer_phone, items, paga_con } = params;
+          const { customer_phone, items, paga_con } = params as Record<string, unknown>;
 
           // 1. Strict Validation
           if (!items || !Array.isArray(items) || items.length === 0) {
@@ -39,7 +39,7 @@ class SalesCommandHandler {
             );
           }
 
-          if (paga_con < 0) {
+          if ((paga_con as number) < 0) {
             return ServiceResponseHelper.error(
               'Payment amount cannot be negative.',
               'VALIDATION_ERROR',
@@ -48,38 +48,38 @@ class SalesCommandHandler {
 
           // 2. Validate and deduct stock for each item
           for (const item of items) {
-            const findRes = await dataService.find(
+            const itemData = item as Record<string, unknown>;
+            const findRes = await dataService.find<Record<string, unknown>>(
               'products',
-              { code: item.code },
+              { code: itemData.code },
               { limit: 1 },
               context,
             );
 
-            if (
-              !findRes.success ||
-              !findRes.data ||
-              !findRes.data.results ||
-              findRes.data.results.length === 0
-            ) {
+            if (!findRes.success || !findRes.data || findRes.data.length === 0) {
               return ServiceResponseHelper.error(
-                `Product ${item.code} not found`,
+                `Product ${itemData.code} not found`,
                 'STOCK_NOT_FOUND',
               );
             }
 
-            const product = findRes.data.results[0];
-            const currentQuantity = parseInt(product.quantity);
-            const requestedQuantity = parseInt(item.quantity);
+            const product = findRes.data[0] as Record<string, unknown>;
+            const currentQuantity = parseInt((product.quantity as string) || '0');
+            const requestedQuantity = parseInt((itemData.quantity as string) || '0');
 
             if (currentQuantity < requestedQuantity) {
               return ServiceResponseHelper.error(
-                `Insufficient stock for product ${item.code}. Available: ${currentQuantity}`,
+                `Insufficient stock for product ${itemData.code}. Available: ${currentQuantity}`,
                 'INSUFFICIENT_STOCK',
               );
             }
 
             const newQuantity = currentQuantity - requestedQuantity;
-            await dataService.write(`products[code=${item.code}].quantity`, newQuantity, context);
+            await dataService.write(
+              `products[code=${itemData.code}].quantity`,
+              newQuantity,
+              context,
+            );
           }
 
           // 2. Register the sale in the 'sales' array
@@ -87,10 +87,14 @@ class SalesCommandHandler {
             date: new Date().toISOString(),
             customer_phone,
             items,
-            total: items.reduce(
-              (sum: number, i: any) => sum + parseFloat(i.price) * parseInt(i.quantity),
-              0,
-            ),
+            total: items.reduce((sum: number, i: unknown) => {
+              const item = i as Record<string, unknown>;
+              return (
+                sum +
+                parseFloat((item.price as string) || '0') *
+                  parseInt((item.quantity as string) || '0')
+              );
+            }, 0),
             paga_con,
             status: 'completed',
           };
@@ -105,9 +109,10 @@ class SalesCommandHandler {
           }
 
           return ServiceResponseHelper.success('Sale processed successfully.', saleRes.data);
-        } catch (e: any) {
+        } catch (e: unknown) {
+          const error = e as Error & { stack?: string };
           return ServiceResponseHelper.error(
-            `Error processing sale: ${e.message}. Data structure: ${JSON.stringify(e.stack || 'no stack')}`,
+            `Error processing sale: ${error.message || 'Unknown error'}. Data structure: ${error.stack || 'no stack'}`,
             'SALES_COBRAR_ERROR',
           );
         }
@@ -125,11 +130,14 @@ class SalesCommandHandler {
       metadata: { requiredPlan: 'free' },
       func: async (dataService, context, params) => {
         try {
-          const { items, total, account_alias, client_request_id } = params;
+          const { items, total, account_alias, client_request_id } = params as Record<
+            string,
+            unknown
+          >;
 
           // 0. Idempotency Check
           if (client_request_id) {
-            const res = await dataService.find(
+            const res = await dataService.find<Record<string, unknown>>(
               'sales_orders',
               { client_request_id },
               { limit: 1 },
@@ -137,7 +145,7 @@ class SalesCommandHandler {
             );
             if (res.success && res.data && res.data.length > 0) {
               return ServiceResponseHelper.success('Sale already registered.', {
-                sale_id: res.data[0].id,
+                sale_id: res.data[0].id as string,
               });
             }
           }
@@ -173,19 +181,24 @@ class SalesCommandHandler {
           if (!saleRes.success) return saleRes;
 
           // 3. Items
-          for (const item of items) {
-            const subtotal = parseFloat(item.price) * parseInt(item.quantity);
-            await dataService.push(
-              'sale_items',
-              {
-                sale_id: saleId,
-                product_code: item.code,
-                quantity: item.quantity,
-                price: item.price,
-                subtotal: subtotal,
-              },
-              context,
-            );
+          if (Array.isArray(items)) {
+            for (const item of items) {
+              const itemData = item as Record<string, unknown>;
+              const subtotal =
+                parseFloat((itemData.price as string) || '0') *
+                parseInt((itemData.quantity as string) || '0');
+              await dataService.push(
+                'sale_items',
+                {
+                  sale_id: saleId,
+                  product_code: itemData.code,
+                  quantity: itemData.quantity,
+                  price: itemData.price,
+                  subtotal: subtotal,
+                },
+                context,
+              );
+            }
           }
 
           // 4. Mock Payment Link
@@ -202,9 +215,9 @@ class SalesCommandHandler {
             payment_link: paymentLink,
             sale_id: saleId,
           });
-        } catch (e: any) {
+        } catch (e: unknown) {
           return ServiceResponseHelper.error(
-            e.message || 'Error creating sale',
+            e instanceof Error ? e.message : 'Error creating sale',
             'SALE_CREATE_ERROR',
           );
         }
@@ -217,24 +230,24 @@ class SalesCommandHandler {
       metadata: { requiredPlan: 'free' },
       func: async (dataService, context, params) => {
         try {
-          const { sale_id } = params;
+          const { sale_id } = params as Record<string, unknown>;
           const res = await dataService.executeCustom('CONFIRM_SALE_PAYMENT', {
             sale_id: sale_id,
             user_id: context.userId,
-            tenantId: (dataService as any).ensureClientId({ tenantId: context.tenantId }),
+            tenantId: dataService.ensureClientId({ tenantId: context.tenantId }),
           });
 
           if (!res.success) {
             return ServiceResponseHelper.error(
               `Payment confirmation failed: ${res.message}`,
-              res.data?.error_code || 'CONFIRM_PAYMENT_ERROR',
+              (res.data as any)?.error_code || 'CONFIRM_PAYMENT_ERROR',
             );
           }
 
           return ServiceResponseHelper.success('Payment confirmed and stock updated.');
-        } catch (e: any) {
+        } catch (e: unknown) {
           return ServiceResponseHelper.error(
-            e.message || 'Error confirming payment',
+            e instanceof Error ? e.message : 'Error confirming payment',
             'CONFIRM_PAYMENT_ERROR',
           );
         }

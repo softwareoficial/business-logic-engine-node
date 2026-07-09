@@ -11,12 +11,22 @@ export interface CommandMetadata {
 export type CommandFunction = (
   dataService: IDataService,
   context: RequestContext,
-  params: any,
+  params: Record<string, unknown>,
 ) => Promise<ServiceResponse>;
 
-interface RegisteredCommand {
+export interface RegisteredCommand {
   func: CommandFunction;
   metadata: CommandMetadata;
+}
+
+interface CommandDefinition {
+  name: string;
+  func: CommandFunction;
+  description: string;
+  paramsModel?: Record<string, string>;
+  metadata: {
+    requiredPlan: string;
+  };
 }
 
 class Dispatcher {
@@ -42,7 +52,7 @@ class Dispatcher {
     this.registry.set(name, { func, metadata });
   }
 
-  public registerHandler(handler: any): void {
+  public registerHandler(handler: { commands?: CommandDefinition[] }): void {
     if (handler.commands && Array.isArray(handler.commands)) {
       for (const cmdDef of handler.commands) {
         this.register(cmdDef.name, cmdDef.func.bind(handler), {
@@ -59,12 +69,12 @@ class Dispatcher {
     context: RequestContext,
     command: string,
     status: 'SUCCESS' | 'ERROR',
-    details: Record<string, any> = {},
+    details: Record<string, unknown> = {},
   ): Promise<void> {
     try {
       if (!this.dataService) return;
 
-      const numericTenantId = (this.dataService as any).ensureClientId({
+      const numericTenantId = this.dataService.ensureClientId({
         tenantId: context.tenantId,
       });
 
@@ -88,7 +98,7 @@ class Dispatcher {
 
   public async execute(
     commandName: string,
-    params: any,
+    params: Record<string, unknown>,
     context: RequestContext,
   ): Promise<ServiceResponse> {
     if (!this.dataService) {
@@ -118,10 +128,11 @@ class Dispatcher {
       const result = await func(this.dataService, context, params);
       await this.logEvent(context, commandName, 'SUCCESS');
       return result;
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const errorMessage = e instanceof Error ? e.message : 'Execution error';
       console.error(`Execution error in ${commandName}:`, e);
-      await this.logEvent(context, commandName, 'ERROR', { errorCode: e.message });
-      return ServiceResponseHelper.error(e.message || 'Execution error', 'EXECUTION_ERROR');
+      await this.logEvent(context, commandName, 'ERROR', { errorCode: errorMessage });
+      return ServiceResponseHelper.error(errorMessage, 'EXECUTION_ERROR');
     }
   }
 }

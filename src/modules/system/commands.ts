@@ -1,6 +1,5 @@
 import { IDataService, ServiceResponse, ServiceResponseHelper } from '../../core/IDataService';
 import { RequestContext } from '../../core/RequestContext';
-import crypto from 'crypto';
 
 export interface CommandDefinition {
   name: string;
@@ -9,7 +8,7 @@ export interface CommandDefinition {
   func: (
     dataService: IDataService,
     context: RequestContext,
-    params: any,
+    params: Record<string, unknown>,
   ) => Promise<ServiceResponse>;
   metadata: {
     requiredPlan: string;
@@ -25,15 +24,15 @@ class SystemCommandHandler {
       metadata: { requiredPlan: 'free' },
       func: async (dataService, context, params) => {
         try {
-          const { client_name, owner_email } = params;
+          const { client_name, owner_email } = params as Record<string, unknown>;
           return await dataService.executeCustom('APP:client-create', {
-            client_name,
-            owner_email,
+            client_name: client_name as string,
+            owner_email: owner_email as string,
             tenant_id: context.tenantId,
           });
-        } catch (e: any) {
+        } catch (e: unknown) {
           return ServiceResponseHelper.error(
-            `Error registering client: ${e.message}`,
+            `Error registering client: ${e instanceof Error ? e.message : 'Unknown error'}`,
             'CLIENT_REG_ERROR',
           );
         }
@@ -46,9 +45,9 @@ class SystemCommandHandler {
       metadata: { requiredPlan: 'free' },
       func: async (dataService, context, params) => {
         try {
-          const { plan } = params;
+          const { plan } = params as Record<string, unknown>;
           const allowedPlans = ['free', 'pro', 'enterprise'];
-          if (!allowedPlans.includes(plan)) {
+          if (!allowedPlans.includes(plan as string)) {
             return ServiceResponseHelper.error(
               "Invalid plan. Must be 'free', 'pro', or 'enterprise'.",
               'INVALID_PLAN',
@@ -59,9 +58,9 @@ class SystemCommandHandler {
             clienteId: context.tenantId,
             plan: plan,
           });
-        } catch (e: any) {
+        } catch (e: unknown) {
           return ServiceResponseHelper.error(
-            `Error updating plan: ${e.message}`,
+            `Error updating plan: ${e instanceof Error ? e.message : 'Unknown error'}`,
             'PLAN_UPDATE_ERROR',
           );
         }
@@ -78,9 +77,9 @@ class SystemCommandHandler {
             tenant_id: context.tenantId,
             ...params,
           });
-        } catch (e: any) {
+        } catch (e: unknown) {
           return ServiceResponseHelper.error(
-            `Error listing events: ${e.message}`,
+            `Error listing events: ${e instanceof Error ? e.message : 'Unknown error'}`,
             'EVENT_LIST_ERROR',
           );
         }
@@ -97,9 +96,9 @@ class SystemCommandHandler {
             tenant_id: context.tenantId,
             ...params,
           });
-        } catch (e: any) {
+        } catch (e: unknown) {
           return ServiceResponseHelper.error(
-            `Error getting stats: ${e.message}`,
+            `Error getting stats: ${e instanceof Error ? e.message : 'Unknown error'}`,
             'EVENT_STATS_ERROR',
           );
         }
@@ -116,9 +115,9 @@ class SystemCommandHandler {
             tenant_id: context.tenantId,
             ...params,
           });
-        } catch (e: any) {
+        } catch (e: unknown) {
           return ServiceResponseHelper.error(
-            `Error getting top errors: ${e.message}`,
+            `Error getting top errors: ${e instanceof Error ? e.message : 'Unknown error'}`,
             'EVENT_TOP_ERRORS_ERROR',
           );
         }
@@ -133,11 +132,11 @@ class SystemCommandHandler {
         try {
           return await dataService.executeCustom('SYSTEM:events-clear', {
             tenant_id: context.tenantId,
-            days_to_keep: params.days_to_keep || 30,
+            days_to_keep: (params as Record<string, unknown>).days_to_keep || 30,
           });
-        } catch (e: any) {
+        } catch (e: unknown) {
           return ServiceResponseHelper.error(
-            `Error clearing events: ${e.message}`,
+            `Error clearing events: ${e instanceof Error ? e.message : 'Unknown error'}`,
             'EVENT_CLEAR_ERROR',
           );
         }
@@ -150,15 +149,18 @@ class SystemCommandHandler {
       metadata: { requiredPlan: 'free' },
       func: async (dataService, context, params) => {
         try {
-          const { limit = 50, offset = 0, command } = params;
+          const { limit = 50, offset = 0, command } = params as Record<string, unknown>;
           return await dataService.find(
             'audit_logs',
-            command ? { command } : {},
-            { limit, offset },
+            command ? { command: command as string } : {},
+            { limit: limit as number, offset: offset as number },
             context,
           );
-        } catch (e: any) {
-          return ServiceResponseHelper.error(`Error: ${e.message}`, 'AUDIT_GET_ERROR');
+        } catch (e: unknown) {
+          return ServiceResponseHelper.error(
+            `Error: ${e instanceof Error ? e.message : 'Unknown error'}`,
+            'AUDIT_GET_ERROR',
+          );
         }
       },
     },
@@ -169,16 +171,22 @@ class SystemCommandHandler {
       metadata: { requiredPlan: 'free' },
       func: async (dataService, context, params) => {
         try {
-          const { username, password, role = 'employee' } = params;
-          return await dataService.executeCustom('CLIENT:user-create', {
+          const {
             username,
             password,
+            role: _role = 'employee',
+          } = params as Record<string, unknown>;
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const role_to_use = _role;
+          return await dataService.executeCustom('CLIENT:user-create', {
+            username: username as string,
+            password: password as string,
             role_id: 1,
-            clienteId: (dataService as any).ensureClientId({ tenantId: context.tenantId }),
+            clienteId: dataService.ensureClientId({ tenantId: context.tenantId }),
           });
-        } catch (e: any) {
+        } catch (e: unknown) {
           return ServiceResponseHelper.error(
-            `Error creating user: ${e.message}`,
+            `Error creating user: ${e instanceof Error ? e.message : 'Unknown error'}`,
             'USER_CREATE_ERROR',
           );
         }
@@ -189,25 +197,31 @@ class SystemCommandHandler {
       description: 'Lists all employees and their assigned permissions.',
       paramsModel: {},
       metadata: { requiredPlan: 'free' },
-      func: async (dataService, context, params) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      func: async (dataService, context, _params) => {
         try {
           const result = await dataService.executeCustom('CLIENT:user-list', {
-            clienteId: (dataService as any).ensureClientId({ tenantId: context.tenantId }),
+            clienteId: dataService.ensureClientId({ tenantId: context.tenantId }),
           });
 
-          if (result.success && result.data?.usuarios) {
+          if (
+            result.success &&
+            result.data &&
+            typeof result.data === 'object' &&
+            'usuarios' in result.data
+          ) {
             return {
               ...result,
               data: {
-                results: result.data.usuarios,
+                results: (result.data as Record<string, unknown>).usuarios,
               },
             };
           }
 
           return result;
-        } catch (e: any) {
+        } catch (e: unknown) {
           return ServiceResponseHelper.error(
-            `Error listing users: ${e.message}`,
+            `Error listing users: ${e instanceof Error ? e.message : 'Unknown error'}`,
             'USER_LIST_ERROR',
           );
         }

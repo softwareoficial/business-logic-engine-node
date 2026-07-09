@@ -1,4 +1,4 @@
-import { IDataService, ServiceResponseHelper } from '../../core/IDataService';
+import { IDataService } from '../../core/IDataService';
 
 class EmployeeEngine {
   /**
@@ -11,13 +11,17 @@ class EmployeeEngine {
   ): Promise<boolean> {
     try {
       // 1. Verify employee existence and get tenantId
-      const empRes = await dataService.find('employees', { id: employeeId }, { limit: 1 });
+      const empRes = await dataService.find<Record<string, unknown>>(
+        'employees',
+        { id: employeeId },
+        { limit: 1 },
+      );
       if (!empRes.success || !empRes.data || empRes.data.length === 0) {
         console.warn(`Employee ${employeeId} not found`);
         return false;
       }
 
-      const tenantId = empRes.data[0].tenant_id;
+      const tenantId = empRes.data[0].tenant_id as string;
       const context = { tenantId };
 
       // 2. Verify permission exists for that tenant
@@ -37,7 +41,7 @@ class EmployeeEngine {
       }
 
       // 3. Check if employee has the permission assigned
-      const permRes = await dataService.find(
+      const permRes = await dataService.find<Record<string, unknown>>(
         'employee_permissions',
         {
           employee_id: employeeId,
@@ -51,7 +55,7 @@ class EmployeeEngine {
         return false;
       }
 
-      return permRes.data[0].granted === true;
+      return (permRes.data[0].granted as boolean) === true;
     } catch (e) {
       console.error(`Error checking permission for ${employeeId}:`, e);
       return false;
@@ -71,7 +75,7 @@ class EmployeeEngine {
     try {
       const context = { tenantId };
       // 1. Verify goal type exists for tenant
-      const defRes = await dataService.find(
+      const defRes = await dataService.find<Record<string, unknown>>(
         'business_definitions',
         {
           def_type: 'goal_type',
@@ -87,7 +91,7 @@ class EmployeeEngine {
       }
 
       // 2. Find active goal
-      const goalRes = await dataService.find(
+      const goalRes = await dataService.find<Record<string, unknown>>(
         'employee_goals',
         {
           employee_id: employeeId,
@@ -102,7 +106,7 @@ class EmployeeEngine {
         return;
       }
 
-      const goalId = goalRes.data[0].id;
+      const goalId = goalRes.data[0].id as string;
 
       // Update progress via executeCustom for atomicity
       await dataService.executeCustom('INCREMENT_FIELD', {
@@ -120,13 +124,16 @@ class EmployeeEngine {
   /**
    * Dynamic report delegating aggregation to the Motor.
    */
-  public async getPerformanceReport(dataService: IDataService, tenantId: string): Promise<any[]> {
+  public async getPerformanceReport(
+    dataService: IDataService,
+    tenantId: string,
+  ): Promise<unknown[]> {
     try {
       const res = await dataService.executeCustom('MONITOR:get-client-report', {
-        clienteId: (dataService as any).ensureClientId({ tenantId }),
+        clienteId: dataService.ensureClientId({ tenantId }),
       });
 
-      return res.success ? res.data || [] : [];
+      return res.success ? (res.data as unknown[]) || [] : [];
     } catch (e) {
       console.error(`Error generating performance report:`, e);
       return [];

@@ -1,4 +1,4 @@
-export interface ServiceResponse<T = any> {
+export interface ServiceResponse<T = unknown> {
   success: boolean;
   message: string;
   data?: T;
@@ -14,7 +14,7 @@ export class ServiceResponseHelper {
     };
   }
 
-  static error(message: string, code?: string): ServiceResponse {
+  static error<T = unknown>(message: string, code?: string): ServiceResponse<T> {
     return {
       success: false,
       message,
@@ -28,15 +28,22 @@ export interface IDataService {
    * The primary method to interact with the Infrastructure Engine.
    * All business logic now delegates to this single point of execution.
    */
-  execute(command: string, payload: Record<string, any>): Promise<ServiceResponse>;
-  executeCustom(command: string, payload: Record<string, any>): Promise<ServiceResponse>;
-  find(
+  execute<T = unknown>(
+    command: string,
+    payload: Record<string, unknown>,
+  ): Promise<ServiceResponse<T>>;
+  executeCustom<T = unknown>(
+    command: string,
+    payload: Record<string, unknown>,
+  ): Promise<ServiceResponse<T>>;
+  find<T = unknown>(
     path: string,
-    filter: Record<string, any>,
+    filter: Record<string, unknown>,
     options?: { limit?: number; offset?: number },
     context?: { tenantId: string },
-  ): Promise<ServiceResponse>;
-  push(path: string, item: any, context: { tenantId: string }): Promise<ServiceResponse>;
-  write(path: string, value: any, context: { tenantId: string }): Promise<ServiceResponse>;
-  read(path?: string, context?: { tenantId: string }): Promise<ServiceResponse>;
+  ): Promise<ServiceResponse<T[]>>;
+  push(path: string, item: unknown, context: { tenantId: string }): Promise<ServiceResponse>;
+  write(path: string, value: unknown, context: { tenantId: string }): Promise<ServiceResponse>;
+  read<T = unknown>(path?: string, context?: { tenantId: string }): Promise<ServiceResponse<T>>;
+  ensureClientId(payload: Record<string, unknown>): number;
 }

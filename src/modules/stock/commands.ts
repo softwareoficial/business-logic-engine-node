@@ -8,7 +8,7 @@ export interface CommandDefinition {
   func: (
     dataService: IDataService,
     context: RequestContext,
-    params: any,
+    params: Record<string, unknown>,
   ) => Promise<ServiceResponse>;
   metadata: {
     requiredPlan: string;
@@ -22,13 +22,14 @@ class StockCommandHandler {
       description: 'Retrieves all products for the current tenant.',
       paramsModel: {},
       metadata: { requiredPlan: 'free' },
-      func: async (dataService, context, params) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      func: async (dataService, context, _params) => {
         try {
           // Use the new find method: path, filter, options, context
           return await dataService.find('products', {}, {}, context);
-        } catch (e: any) {
+        } catch (e: unknown) {
           return ServiceResponseHelper.error(
-            `Error listing products: ${e.message}`,
+            `Error listing products: ${e instanceof Error ? e.message : 'Unknown error'}`,
             'STOCK_LIST_ERROR',
           );
         }
@@ -48,10 +49,13 @@ class StockCommandHandler {
       metadata: { requiredPlan: 'free' },
       func: async (dataService, context, params) => {
         try {
-          const { code, name, price, quantity, category, is_weight } = params;
+          const { code, name, price, quantity, category, is_weight } = params as Record<
+            string,
+            unknown
+          >;
 
           // 1. Strict Validation
-          if (price < 0 || quantity < 0) {
+          if ((price as number) < 0 || (quantity as number) < 0) {
             return ServiceResponseHelper.error(
               'Price and quantity cannot be negative.',
               'VALIDATION_ERROR',
@@ -65,18 +69,14 @@ class StockCommandHandler {
               : is_weight === 'true' || is_weight === 'yes' || is_weight === 1;
 
           // 2. Check if product code already exists for this tenant
-          const existingProduct = await dataService.find(
+          const existingProduct = await dataService.find<Record<string, unknown>>(
             'products',
             { code },
             { limit: 1 },
             context,
           );
 
-          if (
-            existingProduct.success &&
-            existingProduct.data &&
-            existingProduct.data.results?.length > 0
-          ) {
+          if (existingProduct.success && existingProduct.data && existingProduct.data.length > 0) {
             return ServiceResponseHelper.error(
               `Product with code ${code} already exists. Please use a unique code or update the existing product.`,
               'PRODUCT_EXISTS',
@@ -96,9 +96,9 @@ class StockCommandHandler {
             },
             context,
           );
-        } catch (e: any) {
+        } catch (e: unknown) {
           return ServiceResponseHelper.error(
-            `Error adding product: ${e.message}`,
+            `Error adding product: ${e instanceof Error ? e.message : 'Unknown error'}`,
             'STOCK_ADD_ERROR',
           );
         }
@@ -111,13 +111,14 @@ class StockCommandHandler {
       metadata: { requiredPlan: 'free' },
       func: async (dataService, context, params) => {
         try {
-          const { code, quantity, reason = 'MANUAL' } = params;
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { code, quantity, reason: _reason = 'MANUAL' } = params as Record<string, unknown>;
           // Use write with a path to update only the quantity of the specific product
           const path = `products[code=${code}].quantity`;
           return await dataService.write(path, quantity, context);
-        } catch (e: any) {
+        } catch (e: unknown) {
           return ServiceResponseHelper.error(
-            `Error updating stock: ${e.message}`,
+            `Error updating stock: ${e instanceof Error ? e.message : 'Unknown error'}`,
             'STOCK_UPDATE_ERROR',
           );
         }
@@ -130,12 +131,12 @@ class StockCommandHandler {
       metadata: { requiredPlan: 'free' },
       func: async (dataService, context, params) => {
         try {
-          const { code } = params;
+          const { code } = params as Record<string, unknown>;
           // Use find with a filter on the code
           return await dataService.find('products', { code }, {}, context);
-        } catch (e: any) {
+        } catch (e: unknown) {
           return ServiceResponseHelper.error(
-            `Error fetching product: ${e.message}`,
+            `Error fetching product: ${e instanceof Error ? e.message : 'Unknown error'}`,
             'STOCK_GET_ERROR',
           );
         }

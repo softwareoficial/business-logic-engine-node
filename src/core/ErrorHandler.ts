@@ -1,18 +1,17 @@
-import { ErrorSource, logger, LogLevel } from './Logger';
-import { ServiceResponse } from './IDataService';
+import { ErrorSource, logger } from './Logger';
 
 export class AppError extends Error {
   public readonly source: ErrorSource;
   public readonly code: string;
   public readonly statusCode: number;
-  public readonly details?: any;
+  public readonly details?: unknown;
 
   constructor(
     message: string,
     source: ErrorSource,
     code: string,
     statusCode: number = 400,
-    details?: any,
+    details?: unknown,
   ) {
     super(message);
     this.source = source;
@@ -29,53 +28,80 @@ export interface FormattedErrorResponse {
   error: {
     source: ErrorSource;
     code: string;
-    details: any;
+    details: unknown;
   };
-  learning_center?: any;
+  learning_center?: unknown;
+}
+
+interface AxiosLikeError extends Record<string, unknown> {
+  response?: {
+    data?: {
+      error?: {
+        message?: string;
+        code?: string;
+      };
+    };
+    status?: number;
+  };
+  code?: string;
+  message?: string;
 }
 
 export class ErrorHandler {
   /**
    * Normalizes any error into an AppError to be handled by the global middleware.
    */
-  public static handle(error: any): AppError {
+  public static handle(error: unknown): AppError {
     // 1. If it's already an AppError, just return it
     if (error instanceof AppError) return error;
 
-    // 2. Handle Infrastructure ServiceResponse errors (success: false)
-    if (error && typeof error === 'object' && error.success === false && 'code' in error) {
+    // Ensure error is an object for subsequent checks
+    if (!error || typeof error !== 'object') {
       return new AppError(
-        error.message || 'Infrastructure Error',
+        (error as Error)?.message || 'An unexpected internal error occurred',
+        ErrorSource.BACKEND_LOGIC,
+        'INTERNAL_SERVER_ERROR',
+        500,
+      );
+    }
+
+    const err = error as Record<string, unknown>;
+
+    // 2. Handle Infrastructure ServiceResponse errors (success: false)
+    if (err.success === false && 'code' in err) {
+      return new AppError(
+        (err.message as string) || 'Infrastructure Error',
         ErrorSource.INFRASTRUCTURE,
-        error.code || 'INFRA_ERROR',
+        (err.code as string) || 'INFRA_ERROR',
         400,
       );
     }
 
     // 3. Handle Axios/Network Errors
-    if (error.response?.data || (error.code && error.message?.includes('API'))) {
+    const axiosError = err as AxiosLikeError; // Cast to avoid excessive boilerplate
+    if (axiosError.response?.data || (axiosError.code && axiosError.message?.includes('API'))) {
       return new AppError(
-        error.response?.data?.error?.message || error.message || 'Infrastructure Error',
+        axiosError.response?.data?.error?.message || axiosError.message || 'Infrastructure Error',
         ErrorSource.INFRASTRUCTURE,
-        error.response?.data?.error?.code || 'INFRA_ERROR',
-        error.response?.status || 502,
+        axiosError.response?.data?.error?.code || 'INFRA_ERROR',
+        axiosError.response?.status || 502,
       );
     }
 
     // 4. Handle Zod Validation Errors
-    if (error.name === 'ZodError') {
+    if (err.name === 'ZodError') {
       return new AppError(
         'Invalid request parameters',
         ErrorSource.VALIDATION,
         'VALIDATION_ERROR',
         400,
-        error.issues,
+        (err as Record<string, unknown>).issues,
       );
     }
 
     // 5. Generic Backend Errors
     return new AppError(
-      error.message || 'An unexpected internal error occurred',
+      (err.message as string) || 'An unexpected internal error occurred',
       ErrorSource.BACKEND_LOGIC,
       'INTERNAL_SERVER_ERROR',
       500,
@@ -87,7 +113,6 @@ export class ErrorHandler {
    */
   public static formatResponse(error: AppError): FormattedErrorResponse {
     // Log to our internal event bus
-    const logLevel = error.statusCode >= 500 ? LogLevel.CRITICAL : LogLevel.ERROR;
     logger.error(error.message, error.source, {
       code: error.code,
       details: error.details,

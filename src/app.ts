@@ -3,7 +3,7 @@ import cors from 'cors';
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import sanitizeHtml from 'sanitize-html';
-import { dispatcher } from './core/Dispatcher';
+import { dispatcher, RegisteredCommand } from './core/Dispatcher';
 import { dbClient } from './core/DbClient';
 import { RequestContext } from './core/RequestContext';
 import { ErrorHandler } from './core/ErrorHandler';
@@ -14,10 +14,8 @@ import { ExampleGenerator } from './core/ExampleGenerator';
 const CommandRequestSchema = z.object({
   cmd: z.string(),
   params: z.record(z.string(), z.any()).optional().default({}),
-  tenantId: z.union([z.string().uuid(), z.string().regex(/^\d+$/)]),
-  userId: z.string().uuid().optional(),
-  role: z.string().default('employee'),
-  plan: z.string().default('free'),
+  source: z.string().optional().default('FRONTEND'),
+  appId: z.string().optional().default('web-client'),
 });
 
 const RegisterSchema = z.object({
@@ -26,8 +24,16 @@ const RegisterSchema = z.object({
   nombreCliente: z.string().min(1, 'Business name is required'),
 });
 
-type CommandRequest = z.infer<typeof CommandRequestSchema>;
-type RegisterRequest = z.infer<typeof RegisterSchema>;
+interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string | number;
+    cliente_id: string | number;
+    role_name: string;
+    plan: string;
+    [key: string]: unknown;
+  };
+  userToken?: string;
+}
 
 const app = express();
 
@@ -37,12 +43,14 @@ app.use(express.json());
 // --- Security Middlewares ---
 
 const sanitizationMiddleware = (req: Request, res: Response, next: NextFunction) => {
-  const sanitizeValue = (val: any): any => {
+  const sanitizeValue = (val: unknown): unknown => {
     if (typeof val === 'string') return sanitizeHtml(val);
     if (Array.isArray(val)) return val.map(sanitizeValue);
     if (typeof val === 'object' && val !== null) {
-      const sanitized: Record<string, any> = {};
-      for (const [k, v] of Object.entries(val)) sanitized[k] = sanitizeValue(v);
+      const sanitized: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+        sanitized[k] = sanitizeValue(v);
+      }
       return sanitized;
     }
     return val;
@@ -68,13 +76,13 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction) =
   const token = authHeader.split(' ')[1];
 
   try {
-    // Validate token using the Infrastructure Engine.
-    // The infra engine now handles the tenant identity automatically via the token.
-    const authRes = await dbClient.execute('USER:verify-token', {
+    // We use the Infra Engine to resolve the identity associated with this token.
+    // We call 'USER:read' which is the source of truth for user/tenant identity.
+    const authRes = await dbClient.execute('USER:read', {
       token,
     });
 
-    if (!authRes.success) {
+    if (!authRes.success || !authRes.data) {
       return res.status(403).json({
         success: false,
         message: 'Access forbidden. The provided token is not valid.',
@@ -82,24 +90,24 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction) =
       });
     }
 
-    // Attach authenticated user and token to the request for subsequent use
-    (req as any).user = authRes.data;
-    (req as any).userToken = token;
+    // The Infra Engine returns the user object (id, username, cliente_id, role_id, etc.)
+    // We attach this verified identity to the request.
+    (req as AuthenticatedRequest).user = authRes.data as AuthenticatedRequest['user'];
+    (req as AuthenticatedRequest).userToken = token;
     next();
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Security validation failed';
     res
       .status(500)
-      .json({ success: false, message: 'Security validation failed', error: error.message });
+      .json({ success: false, message: 'Security validation failed', error: errorMessage });
   }
 };
-
 // --- Endpoints ---
 
 app.post('/register', async (req: Request, res: Response) => {
   try {
     const validatedData = RegisterSchema.parse(req.body);
 
-    // Call the infrastructure engine directly via dbClient
     const result = await dbClient.execute('APP:self-register', {
       username: validatedData.username,
       password: validatedData.password,
@@ -115,7 +123,7 @@ app.post('/register', async (req: Request, res: Response) => {
       message: 'Account created successfully',
       data: result.data,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -123,14 +131,61 @@ app.post('/register', async (req: Request, res: Response) => {
         errors: error.issues,
       });
     }
-    res.status(500).json({ success: false, message: error.message || 'Internal server error' });
+    const errorMessage = error instanceof Error ? error.message : 'Internal server error';
+    res.status(500).json({ success: false, message: errorMessage });
   }
 });
 
+app.post('/login', async (req: Request, res: Response) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'Username and password are required' });
+    }
+
+    const result = await dbClient.execute('USER:login', { username, password });
+
+    if (!result.success) {
+      return res.status(401).json(result);
+    }
+
+    res.json({
+      success: true,
+      message: 'Login successful',
+      data: result.data,
+    });
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Internal server error';
+    res.status(500).json({ success: false, message: errorMessage });
+  }
+});
+
+app.get('/me', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    // The user token is already verified by authMiddleware.
+    // We call 'USER:get-profile' to get the detailed user and company info.
+    const result = await dbClient.execute('USER:get-profile', {});
+
+    if (!result.success) {
+      return res.status(403).json(result);
+    }
+
+    res.json({
+      success: true,
+      data: result.data,
+    });
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Internal server error';
+    res.status(500).json({ success: false, message: errorMessage });
+  }
+});
 app.get('/', (req: Request, res: Response) => {
   const html = `
     <!DOCTYPE html>
     <html lang="es">
+...
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -150,25 +205,25 @@ app.get('/', (req: Request, res: Response) => {
     </head>
     <body>
       <h1>🚀 Bienvenido, Frontend Dev</h1>
-      <p>Estás conectado al <strong>Business Logic Engine</strong>. Esta API no es un REST tradicional; es un motor de comandos dinámicos diseñado para que puedas iterar la UI sin cambiar el código del servidor.</p>
+      <p>Estás conectado al <strong>Business Logic Engine</strong>. Esta API actúa como un Gateway seguro hacia el motor de infraestructura.</p>
       
       <h2>🛠️ Endpoints Principales</h2>
       
       <div class="endpoint">
         <span class="method">POST</span> <code>/register</code>
-        <p><strong>¡Empieza aquí!</strong> Crea una cuenta nueva para tu negocio. Recibirás tu <code>clienteId</code> y un <code>token</code> de acceso.</p>
+        <p><strong>¡Empieza aquí!</strong> Crea una cuenta nueva. Recibirás tu <code>token</code> de acceso.</p>
       </div>
 
       <div class="endpoint">
         <span class="method">GET</span> <code>/commands</code>
-        <p>El "Mapa del Tesoro". Devuelve todos los comandos disponibles, sus parámetros requeridos y ejemplos reales de uso.</p>
+        <p>Devuelve todos los comandos disponibles y ejemplos de uso.</p>
       </div>
       
       <div class="endpoint">
         <span class="method">POST</span> <code>/execute</code>
-        <p>El "Motor de Ejecución". Envía cualquier comando aquí para obtener un resultado. Es el único endpoint que necesitarás para la lógica de negocio.</p>
+        <p>Envía comandos de negocio. <strong>Importante:</strong> Debes incluir el token en el header Authorization: <code>Bearer YOUR_TOKEN</code>.</p>
         <div style="margin-top: 10px; font-size: 0.85em; color: #666; background: #f9f9f9; padding: 8px; border-radius: 4px; border: 1px dashed #ccc;">
-          <strong>💡 Telemetría Automática:</strong> Puedes enviar los campos <code>source</code> (ej: 'ANDROID_APP') y <code>appId</code> (ej: 'my-store-app') para rastrear la actividad de diferentes plataformas en el panel de administración.
+          <strong>💡 Nota de Seguridad:</strong> Ya no necesitas enviar tenantId o userId. El sistema los resuelve automáticamente desde tu token.
         </div>
       </div>
       
@@ -181,36 +236,30 @@ app.get('/', (req: Request, res: Response) => {
       <div class="guide">
         <div class="step">
           <div class="step-number">1</div>
-          <div><strong>Regístrate:</strong> Envía un <code>POST /register</code> con tu usuario, contraseña y nombre de empresa.</div>
+          <div><strong>Regístrate:</strong> Envía un <code>POST /register</code>.</div>
         </div>
         <div class="step">
           <div class="step-number">2</div>
-          <div><strong>Obtén tus Credenciales:</strong> Guarda el <code>token</code> y el <code>clienteId</code>. Este ID (ya sea un número o un UUID) es el que usarás como <code>tenantId</code> en tus peticiones.</div>
+          <div><strong>Autentícate:</strong> Usa el <code>token</code> recibido en el header <code>Authorization: Bearer TOKEN</code>.</div>
         </div>
         <div class="step">
           <div class="step-number">3</div>
-          <div><strong>Descubre:</strong> Haz un <code>GET /commands</code> para ver qué puedes hacer hoy.</div>
+          <div><strong>Descubre:</strong> Haz un <code>GET /commands</code>.</div>
         </div>
         <div class="step">
           <div class="step-number">4</div>
-          <div><strong>Ejecuta:</strong> Envía un JSON a <code>/execute</code> siguiendo este formato:
+          <div><strong>Ejecuta:</strong> Envía un JSON a <code>/execute</code>:
             <pre style="background: #2c3e50; color: #fff; padding: 1rem; border-radius: 5px; overflow-x: auto;">{
   "cmd": "nombre.del.comando",
   "params": { "clave": "valor" },
-  "tenantId": "tu-uuid-aqui",
-  "source": "web-app",
-  "appId": "v1.0-stable"
+  "source": "web-app"
 }</pre>
           </div>
-        </div>
-        <div class="step">
-          <div class="step-number">5</div>
-          <div><strong>Aprende:</strong> Si recibes un error, revisa el objeto <code>learning_center</code> en la respuesta para ver el ejemplo correcto.</div>
         </div>
       </div>
 
       <div class="footer">
-        Business Logic Engine &bull; API for Fast Iteration
+        Business Logic Engine &bull; Secure Gateway Mode
       </div>
     </body>
     </html>
@@ -226,15 +275,13 @@ app.get('/health', async (req: Request, res: Response) => {
 });
 
 app.get('/commands', (req: Request, res: Response) => {
-  // We use a hack to access the private registry since it's not exposed
-  // In a real production scenario, we would add a getCommands() method to the Dispatcher
-  const registry = (dispatcher as any).registry;
+  const registry = (dispatcher as unknown as { registry: Map<string, RegisteredCommand> }).registry;
 
   if (!registry) {
     return res.status(500).json({ success: false, message: 'Dispatcher registry not found' });
   }
 
-  const commandsList = Array.from(registry.values()).map((cmd: any) => ({
+  const commandsList = Array.from(registry.values()).map((cmd: RegisteredCommand) => ({
     name: cmd.metadata.name,
     description: cmd.metadata.description,
     paramsModel: cmd.metadata.paramsModel,
@@ -260,12 +307,15 @@ app.post(
     const startTime = Date.now();
     try {
       const validatedData = CommandRequestSchema.parse(req.body);
+      const user = (req as AuthenticatedRequest).user;
 
+      // BUILD SECURE CONTEXT
+      // We extract identity strictly from the verified user object returned by the Infrastructure Engine
       const context: RequestContext = {
-        tenantId: validatedData.tenantId,
-        userId: (req as any).user?.userId || validatedData.userId,
-        role: (req as any).user?.role || validatedData.role,
-        plan: (req as any).user?.plan || validatedData.plan,
+        tenantId: user?.cliente_id?.toString() || 'unknown',
+        userId: user?.id?.toString() || 'unknown',
+        role: user?.role_name || 'employee',
+        plan: user?.plan || 'free',
         source: req.body.source || 'FRONTEND',
         appId: req.body.appId || 'web-client',
         userAgent: req.headers['user-agent'] || 'unknown',
@@ -295,13 +345,13 @@ app.post(
         })
         .catch((err) => console.error('Event logging failed:', err));
 
-      logger.info(`Command executed successfully: ${validatedData.cmd}`, {
+      logger.info(`Command executed successfully: \${validatedData.cmd}`, {
         tenantId: context.tenantId,
         userId: context.userId,
       });
 
       res.json(result);
-    } catch (error: any) {
+    } catch (error: unknown) {
       const duration = Date.now() - startTime;
       const appError = ErrorHandler.handle(error);
       const formattedResponse = ErrorHandler.formatResponse(appError);
@@ -322,10 +372,10 @@ app.post(
       }
 
       const errorContext: RequestContext = {
-        tenantId: req.body?.tenantId || 'unknown',
-        userId: req.body?.userId || 'unknown',
-        role: 'unknown',
-        plan: 'unknown',
+        tenantId: (req as AuthenticatedRequest).user?.cliente_id?.toString() || 'unknown',
+        userId: (req as AuthenticatedRequest).user?.id?.toString() || 'unknown',
+        role: (req as AuthenticatedRequest).user?.role_name || 'unknown',
+        plan: (req as AuthenticatedRequest).user?.plan || 'unknown',
         source: req.body?.source || 'FRONTEND',
         requestId: crypto.randomUUID(),
       };
