@@ -43,7 +43,8 @@ class SystemCommandHandler {
             requestId: context.requestId,
           };
 
-          return await dataService.push('logs_trafico', logEntry, { tenantId: '1' });
+          await dataService.push('logs_trafico', logEntry, { tenantId: '1' });
+          return ServiceResponseHelper.success('Traffic tracked successfully');
         } catch (e: unknown) {
           return ServiceResponseHelper.error(
             `Error tracking traffic: ${e instanceof Error ? e.message : 'Unknown error'}`,

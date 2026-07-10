@@ -31,11 +31,9 @@ class AnalyticsCommandHandler {
         try {
           // Delegate directly to the Infrastructure Engine's specialized command
           // This leverages the Infra's built-in auto-enrichment and flexibility.
-          const res = await dataService.executeCustom('ANALYTICS:track-visit', params);
+          await dataService.executeCustom('ANALYTICS:track-visit', params);
 
-          return res && typeof res === 'object' && 'success' in res
-            ? res
-            : ServiceResponseHelper.success('Visit tracked successfully', res);
+          return ServiceResponseHelper.success('Visit tracked successfully');
         } catch (e: unknown) {
           return ServiceResponseHelper.error(
             `Error tracking visit: ${e instanceof Error ? e.message : 'Unknown error'}`,
