@@ -72,6 +72,7 @@ const allowedOrigins = [
 
 const app = express();
 
+app.set('trust proxy', 1);
 app.use(cors({
   origin: function (origin, callback) {
     // Permitir peticiones sin origen (como curl o apps móviles)
@@ -590,7 +591,7 @@ app.post(
         })
         .catch((err) => console.error('Event logging failed:', err));
 
-      logger.info(`Command executed successfully: \${validatedData.cmd}`, {
+      logger.info(`Command executed successfully: ${validatedData.cmd}`, {
         tenantId: context.tenantId,
         userId: context.userId,
       });
@@ -628,7 +629,6 @@ app.post(
       dispatcher
         .logEvent(errorContext, req.body?.cmd || 'unknown', 'ERROR', {
           duration,
-          source: appError.source,
           errorCode: appError.code,
         })
         .catch((err) => console.error('Event logging failed:', err));
