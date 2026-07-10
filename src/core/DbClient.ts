@@ -112,6 +112,11 @@ class DbClient implements IDataService {
     }
 
     try {
+      console.log(`[DB_CLIENT_DEBUG] Sending request to /execute:`, {
+        token: this.adminToken,
+        command: command,
+        payload: payload,
+      });
       const response = await this.httpClient.post('/execute', {
         token: this.adminToken,
         command: command,
