@@ -122,13 +122,27 @@ export class ErrorHandler {
 
     // Determine a user-friendly message based on the error code
     const userMessages: Record<string, string> = {
-      VALIDATION_ERROR: 'Please check the information you entered. Some fields are incorrect.',
-      UNAUTHORIZED: 'Your session has expired. Please log in again.',
-      FORBIDDEN: 'You do not have permission to perform this action.',
-      INTERNAL_SERVER_ERROR: 'Something went wrong on our end. Please try again in a few minutes.',
-      INFRA_ERROR: 'We are having trouble connecting to our data services. Please try again later.',
-      USERNAME_TAKEN: 'This username is already in use. Please try another one.',
-      AUTH_FAILED: 'The username or password provided is incorrect.',
+      VALIDATION_ERROR:
+        'Los datos ingresados no son válidos. Por favor, revisa los campos marcados en rojo.',
+      UNAUTHORIZED: 'Tu sesión ha expirado. Por favor, inicia sesión nuevamente.',
+      FORBIDDEN:
+        'No tienes permisos suficientes para realizar esta acción. Contacta con tu administrador.',
+      INTERNAL_SERVER_ERROR:
+        'Ha ocurrido un error interno en nuestro servidor. Estamos trabajando para solucionarlo.',
+      INFRA_ERROR:
+        'Error de comunicación con la base de datos. Por favor, intenta de nuevo en unos instantes.',
+      USERNAME_TAKEN: 'Este nombre de usuario ya está registrado. Prueba con uno diferente.',
+      AUTH_FAILED: 'El usuario o la contraseña son incorrectos.',
+      MISSING_PARAMS:
+        'Faltan datos obligatorios para procesar la solicitud. Por favor, completa todos los campos.',
+      PLAN_REQUIRED:
+        'Esta funcionalidad no está incluida en tu plan actual. Actualiza tu plan para acceder.',
+      RATE_LIMIT_EXCEEDED:
+        'Has superado el límite de peticiones permitidas. Por favor, espera un momento.',
+      TOO_MANY_REQUESTS:
+        'Demasiadas solicitudes en un corto periodo de tiempo. Por favor, reduce la frecuencia de tus peticiones.',
+      MISSING_CLIENT_CONTEXT:
+        'No se ha detectado un contexto de empresa válido. Asegúrate de estar autenticado y vinculado a una empresa antes de crear empleados.',
     };
 
     const user_message =

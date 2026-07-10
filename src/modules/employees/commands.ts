@@ -68,6 +68,14 @@ class EmployeeCommandHandler {
       func: async (dataService, context, params) => {
         try {
           const { name, role, type, user_id, bot_profile_id } = params as Record<string, unknown>;
+
+          if (!context.tenantId || context.tenantId === 'unknown') {
+            return ServiceResponseHelper.error(
+              'No valid client context found. You must be authenticated or linked to a valid business to create employees.',
+              'MISSING_CLIENT_CONTEXT',
+            );
+          }
+
           if (!['human', 'bot'].includes(type as string)) {
             return ServiceResponseHelper.error(
               "Invalid type. Must be 'human' or 'bot'.",

@@ -18,6 +18,41 @@ export interface CommandDefinition {
 class SystemCommandHandler {
   public commands: CommandDefinition[] = [
     {
+      name: 'system.analytics.track',
+      description: 'Tracks public website traffic data. Accessible without authentication.',
+      paramsModel: {
+        type: 'string',
+        referrer: 'string',
+        userAgent: 'string',
+        language: 'string',
+        url: 'string',
+      },
+      metadata: { requiredPlan: 'free' },
+      func: async (dataService, context, params) => {
+        try {
+          const { type, referrer, userAgent, language, url } = params as Record<string, unknown>;
+
+          const logEntry = {
+            timestamp: new Date().toISOString(),
+            type,
+            referrer,
+            userAgent,
+            language,
+            url,
+            ip: context.ipAddress,
+            requestId: context.requestId,
+          };
+
+          return await dataService.push('logs_trafico', logEntry, { tenantId: '1' });
+        } catch (e: unknown) {
+          return ServiceResponseHelper.error(
+            `Error tracking traffic: ${e instanceof Error ? e.message : 'Unknown error'}`,
+            'ANALYTICS_TRACK_ERROR',
+          );
+        }
+      },
+    },
+    {
       name: 'system.client.register',
       description: 'Registers a new business client in the infrastructure.',
       paramsModel: { client_name: 'string', owner_email: 'string' },

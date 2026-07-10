@@ -82,6 +82,18 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const publicApiLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 20, // Max 20 requests per minute per IP for public tracking
+  message: {
+    success: false,
+    message: 'Too many tracking requests. Please slow down.',
+    code: 'RATE_LIMIT_EXCEEDED',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // --- Global Error Handler for Malformed JSON ---
 app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
   if (err instanceof SyntaxError && (err as unknown as Record<string, unknown>)['body']) {
@@ -97,6 +109,14 @@ app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
 app.use(sanitizationMiddleware);
 
 const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
+  // PUBLIC COMMAND WHITELIST: Allow these commands to bypass authentication
+  const publicCommands = ['system.analytics.track', 'ANALYTICS:track-visit', 'staff.create'];
+  const requestedCmd = (req.body as Record<string, unknown>)?.cmd;
+
+  if (typeof requestedCmd === 'string' && publicCommands.includes(requestedCmd)) {
+    return next();
+  }
+
   const token = req.cookies.session_token;
 
   if (!token) {
@@ -493,9 +513,20 @@ app.get('/commands', (req: Request, res: Response) => {
   });
 });
 
+const conditionalPublicLimiter = (req: Request, res: Response, next: NextFunction) => {
+  const requestedCmd = (req.body as Record<string, unknown>)?.cmd;
+  const publicCommands = ['system.analytics.track', 'ANALYTICS:track-visit'];
+
+  if (typeof requestedCmd === 'string' && publicCommands.includes(requestedCmd)) {
+    return publicApiLimiter(req, res, next);
+  }
+  next();
+};
+
 app.post(
   '/execute',
   sanitizationMiddleware,
+  conditionalPublicLimiter,
   authMiddleware,
   async (req: Request, res: Response) => {
     const startTime = Date.now();

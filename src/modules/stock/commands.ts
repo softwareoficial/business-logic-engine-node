@@ -143,9 +143,11 @@ class StockCommandHandler {
 
           let productsArray: Record<string, unknown>[] = [];
           if (allProducts.success && allProducts.data) {
-            productsArray = (Array.isArray(allProducts.data)
-              ? allProducts.data
-              : (allProducts.data as Record<string, unknown>).results) as Record<string, unknown>[];
+            productsArray = (
+              Array.isArray(allProducts.data)
+                ? allProducts.data
+                : (allProducts.data as Record<string, unknown>).results
+            ) as Record<string, unknown>[];
           }
 
           if (!Array.isArray(productsArray)) {

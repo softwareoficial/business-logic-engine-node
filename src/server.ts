@@ -7,6 +7,7 @@ import { systemCommands } from './modules/system/commands';
 import { stockCommands } from './modules/stock/commands';
 import { salesCommands } from './modules/sales/commands';
 import { employeeCommands } from './modules/employees/commands';
+import { analyticsCommands } from './modules/analytics/commands';
 
 async function bootstrap() {
   try {
@@ -30,6 +31,7 @@ async function bootstrap() {
     dispatcher.registerHandler(stockCommands);
     dispatcher.registerHandler(salesCommands);
     dispatcher.registerHandler(employeeCommands);
+    dispatcher.registerHandler(analyticsCommands);
 
     // 4. Start Server
     const port = parseInt(process.env.LOGIC_PORT || '9002', 10);

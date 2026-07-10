@@ -9,12 +9,14 @@ Esta guía detalla la implementación de seguridad de grado industrial para la i
 A diferencia de implementaciones básicas, este sistema **no utiliza localStorage** para guardar tokens, eliminando la vulnerabilidad a ataques XSS.
 
 ### 🛠️ Cómo funciona la Autenticación
+
 1. **Login**: El frontend envía las credenciales a `POST /login`.
 2. **Respuesta**: El servidor **no devuelve el token en el JSON**. En su lugar, envía una cookie `HttpOnly` llamada `session_token`.
 3. **Persistencia**: El navegador guarda la cookie automáticamente. JavaScript **no puede leerla ni modificarla**.
-4. **Peticiones**: En cada llamada a la API, el navegador adjunta la cookie automáticamente. 
+4. **Peticiones**: En cada llamada a la API, el navegador adjunta la cookie automáticamente.
 
-**⚠️ Importante para el Frontend**: 
+**⚠️ Importante para el Frontend**:
+
 - NO intentes guardar el token en localStorage.
 - Al configurar tu cliente HTTP (como Axios), debes activar la opción `withCredentials: true` para que el navegador envíe las cookies al servidor.
 
@@ -23,10 +25,12 @@ A diferencia de implementaciones básicas, este sistema **no utiliza localStorag
 ## 🚀 1. Flujo de Onboarding
 
 ### Paso A: Registro de Empresa
+
 - **Acción**: `POST /register`
 - **Payload**: `{ "username": "...", "password": "...", "nombreCliente": "..." }`
 
 ### Paso B: Inicio de Sesión
+
 - **Acción**: `POST /login`
 - **Payload**: `{ "username": "...", "password": "..." }`
 - **Resultado**: Si es exitoso, el servidor establece la cookie de sesión. El frontend solo debe redirigir al Dashboard.
@@ -38,6 +42,7 @@ A diferencia de implementaciones básicas, este sistema **no utiliza localStorag
 El sistema utiliza el patrón de comando único para máxima flexibilidad.
 
 ### Ejecución Maestro
+
 - **Acción**: `POST /execute`
 - **Header**: `Content-Type: application/json` (No necesitas enviar el token, viaja en la cookie).
 - **Payload**:
@@ -49,18 +54,40 @@ El sistema utiliza el patrón de comando único para máxima flexibilidad.
   ```
 
 ### Descubrimiento de Funcionalidades
+
 Consulta `GET /commands` para obtener la lista de comandos disponibles y sus parámetros requeridos.
 
 ---
 
 ## 🛡️ 3. Manejo de Errores y UX
 
-| Código | Acción en el Frontend |
-| :--- | :--- |
-| `AUTH_FAILED` | Mostrar "Credenciales incorrectas". |
-| `FORBIDDEN` | El token expiró o la sesión fue revocada. Redirigir al `/login`. |
-| `TOO_MANY_REQUESTS` | Mostrar alerta de bloqueo temporal por seguridad. |
-| `Validation failed` | Mostrar errores específicos por campo usando el array `errors`. |
+El servidor devuelve un objeto de error estandarizado. El frontend debe priorizar la visualización del campo `user_message`, ya que contiene la instrucción exacta para el usuario final en español.
+
+| Código                  | Mensaje Sugerido / Acción                                              |
+| :---------------------- | :--------------------------------------------------------------------- |
+| `AUTH_FAILED`           | Mostrar `user_message` ("Usuario o contraseña incorrectos").           |
+| `UNAUTHORIZED`          | Mostrar `user_message` y redirigir al `/login`.                        |
+| `FORBIDDEN`             | Mostrar `user_message` ("Sin permisos").                               |
+| `VALIDATION_ERROR`      | Mostrar `user_message` y resaltar campos basados en el array `errors`. |
+| `MISSING_PARAMS`        | Mostrar `user_message` ("Faltan datos obligatorios").                  |
+| `PLAN_REQUIRED`         | Mostrar `user_message` y sugerir actualización de plan.                |
+| `TOO_MANY_REQUESTS`     | Mostrar `user_message` y sugerir esperar unos segundos.                |
+| `INTERNAL_SERVER_ERROR` | Mostrar `user_message` y sugerir reintentar más tarde.                 |
+
+**Ejemplo de respuesta de error:**
+
+```json
+{
+  "success": false,
+  "message": "Invalid request parameters",
+  "user_message": "Los datos ingresados no son válidos. Por favor, revisa los campos marcados en rojo.",
+  "error": {
+    "source": "VALIDATION",
+    "code": "VALIDATION_ERROR",
+    "details": [ ... ]
+  }
+}
+```
 
 ---
 
