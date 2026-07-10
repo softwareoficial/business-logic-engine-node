@@ -60,9 +60,13 @@ class SalesCommandHandler {
             );
           }
 
-          const productsArray = Array.isArray(productsList.data)
+          const productsArray = (Array.isArray(productsList.data)
             ? productsList.data
-            : (productsList.data as Record<string, unknown>).results || [];
+            : (productsList.data as Record<string, unknown>).results) as Record<string, unknown>[];
+
+          if (!Array.isArray(productsArray)) {
+            return ServiceResponseHelper.error('Could not retrieve product list', 'STOCK_LIST_ERROR');
+          }
 
           for (const item of items) {
             const itemData = item as Record<string, unknown>;
