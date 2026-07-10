@@ -211,15 +211,10 @@ app.post('/register', authLimiter, async (req: Request, res: Response) => {
       });
     }
 
-    // 2. Register Business (Client)
-    const clientRes = await dbClient.push(
-      'clients',
-      {
-        name: validatedData.nombreCliente,
-        created_at: new Date().toISOString(),
-      },
-      { tenantId: SYSTEM_TENANT_ID },
-    );
+    // 2. Register Business (Client) using official Infrastructure command
+    const clientRes = await dbClient.execute('APP:client-create', {
+      nombre: validatedData.nombreCliente,
+    });
 
     if (!clientRes.success) {
       return res.status(400).json(clientRes);
@@ -235,19 +230,14 @@ app.post('/register', authLimiter, async (req: Request, res: Response) => {
       });
     }
 
-    // 3. Register User linked to that client
+    // 3. Register User linked to that client using official Infrastructure command
     const hashedPassword = await bcrypt.hash(validatedData.password, 10);
-    const userRes = await dbClient.push(
-      'users',
-      {
-        username: validatedData.username,
-        password: hashedPassword,
-        clienteId: clienteId,
-        role: 'admin',
-        plan: 'free',
-      },
-      { tenantId: clienteId.toString() },
-    );
+    const userRes = await dbClient.execute('CLIENT:user-create', {
+      username: validatedData.username,
+      password: hashedPassword,
+      role: 'CLIENT_ADMIN', // First user is always the admin of the business
+      clienteId: clienteId,
+    });
 
     if (!userRes.success) {
       return res.status(400).json(userRes);
