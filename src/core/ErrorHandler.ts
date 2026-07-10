@@ -143,6 +143,10 @@ export class ErrorHandler {
         'Demasiadas solicitudes en un corto periodo de tiempo. Por favor, reduce la frecuencia de tus peticiones.',
       MISSING_CLIENT_CONTEXT:
         'No se ha detectado un contexto de empresa válido. Asegúrate de estar autenticado y vinculado a una empresa antes de crear empleados.',
+      USER_CREATE_ERROR:
+        'No se pudo crear el usuario. Por favor, verifica que los datos sean correctos y reintenta.',
+      INVALID_ROLE:
+        'El rol especificado no es válido. Por favor, selecciona un rol permitido.',
     };
 
     const user_message =

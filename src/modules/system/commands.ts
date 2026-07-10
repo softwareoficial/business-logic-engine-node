@@ -233,12 +233,30 @@ class SystemCommandHandler {
             password,
             role: _role = 'employee',
           } = params as Record<string, unknown>;
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const role_to_use = _role;
+
+          // --- Role Mapping & Validation ---
+          // Map role names to their internal IDs. If the role is not found, default to 'employee' (2) 
+          // or return a validation error.
+          const roleMap: Record<string, number> = {
+            'admin': 1,
+            'employee': 2,
+            'user': 2, // Handle 'user' as 'employee' to be resilient
+          };
+
+          const normalizedRole = (_role as string)?.toLowerCase();
+          const roleId = roleMap[normalizedRole] || 2; // Default to employee (2)
+
+          if (!username || !password) {
+            return ServiceResponseHelper.error(
+              'Username and password are required',
+              'MISSING_PARAMS',
+            );
+          }
+
           return await dataService.executeCustom('CLIENT:user-create', {
             username: username as string,
             password: password as string,
-            role_id: 1,
+            role_id: roleId,
             clienteId: dataService.ensureClientId({ tenantId: context.tenantId }),
           });
         } catch (e: unknown) {
