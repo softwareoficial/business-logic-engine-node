@@ -235,16 +235,15 @@ class SystemCommandHandler {
           } = params as Record<string, unknown>;
 
           // --- Role Mapping & Validation ---
-          // Map role names to their internal IDs. If the role is not found, default to 'employee' (2) 
-          // or return a validation error.
-          const roleMap: Record<string, number> = {
-            'admin': 1,
-            'employee': 2,
-            'user': 2, // Handle 'user' as 'employee' to be resilient
+          // Infrastructure expects: 'CLIENT_ADMIN' or 'USER'
+          const roleMap: Record<string, string> = {
+            'admin': 'CLIENT_ADMIN',
+            'employee': 'USER',
+            'user': 'USER',
           };
 
           const normalizedRole = (_role as string)?.toLowerCase();
-          const roleId = roleMap[normalizedRole] || 2; // Default to employee (2)
+          const roleToUse = roleMap[normalizedRole] || 'USER';
 
           if (!username || !password) {
             return ServiceResponseHelper.error(
@@ -256,7 +255,7 @@ class SystemCommandHandler {
           return await dataService.executeCustom('CLIENT:user-create', {
             username: username as string,
             password: password as string,
-            role: normalizedRole,
+            role: roleToUse,
             clienteId: dataService.ensureClientId({ tenantId: context.tenantId }),
           });
         } catch (e: unknown) {
