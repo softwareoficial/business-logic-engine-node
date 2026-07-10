@@ -43,7 +43,7 @@ class SystemCommandHandler {
             requestId: context.requestId,
           };
 
-          await dataService.push('logs_trafico', logEntry, { tenantId: '1' });
+          await dataService.push('logs_trafico', logEntry, { tenantId: process.env.SYSTEM_TENANT_ID || '1' });
           return ServiceResponseHelper.success('Traffic tracked successfully');
         } catch (e: unknown) {
           return ServiceResponseHelper.error(

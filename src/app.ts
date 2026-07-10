@@ -16,6 +16,8 @@ import { ExampleGenerator } from './core/ExampleGenerator';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-production-key-12345';
 
+const SYSTEM_TENANT_ID = process.env.SYSTEM_TENANT_ID || '1';
+
 // --- Validation Schemas ---
 const CommandRequestSchema = z.object({
   cmd: z.string(),
@@ -151,7 +153,7 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction) =
     const decoded = jwt.verify(token, JWT_SECRET) as Record<string, unknown>;
 
     // Verify the session still exists in the DB for instant revocation
-    const sessionRes = await dbClient.find('sessions', { token }, { limit: 1 }, { tenantId: '1' });
+    const sessionRes = await dbClient.find('sessions', { token }, { limit: 1 }, { tenantId: SYSTEM_TENANT_ID });
 
     const results =
       sessionRes.data && typeof sessionRes.data === 'object' && 'results' in sessionRes.data
@@ -193,7 +195,7 @@ app.post('/register', authLimiter, async (req: Request, res: Response) => {
       'users',
       { username: validatedData.username },
       { limit: 1 },
-      { tenantId: '1' }, // Use system tenant for global user lookup
+      { tenantId: SYSTEM_TENANT_ID }, // Use system tenant for global user lookup
     );
 
     const existingUsers =
@@ -216,14 +218,22 @@ app.post('/register', authLimiter, async (req: Request, res: Response) => {
         name: validatedData.nombreCliente,
         created_at: new Date().toISOString(),
       },
-      { tenantId: '1' },
+      { tenantId: SYSTEM_TENANT_ID },
     );
 
     if (!clientRes.success) {
       return res.status(400).json(clientRes);
     }
 
-    const clienteId = (clientRes.data as Record<string, unknown>)?.id || '1';
+    const clienteId = (clientRes.data as Record<string, unknown>)?.id;
+
+    if (!clienteId) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to retrieve the created client ID.',
+        code: 'INTERNAL_ERROR',
+      });
+    }
 
     // 3. Register User linked to that client
     const hashedPassword = await bcrypt.hash(validatedData.password, 10);
@@ -273,7 +283,7 @@ app.post('/login', authLimiter, async (req: Request, res: Response) => {
         .json({ success: false, message: 'Username and password are required' });
     }
 
-    const userRes = await dbClient.find('users', { username }, { limit: 1 }, { tenantId: '1' });
+    const userRes = await dbClient.find('users', { username }, { limit: 1 }, { tenantId: SYSTEM_TENANT_ID });
 
     const results =
       userRes.data && typeof userRes.data === 'object' && 'results' in userRes.data
@@ -321,7 +331,7 @@ app.post('/login', authLimiter, async (req: Request, res: Response) => {
         plan: user.plan,
         created_at: new Date().toISOString(),
       },
-      { tenantId: '1' },
+      { tenantId: SYSTEM_TENANT_ID },
     );
 
     // Set HttpOnly Cookie
