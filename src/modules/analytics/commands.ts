@@ -23,8 +23,8 @@ class AnalyticsCommandHandler {
         'Zero-Config Traffic Tracking. Automatically captures IP, Geo-Location, User-Agent, and Timestamp from HTTP headers. No parameters required for basic tracking.',
       paramsModel: {
         tenantId: 'string (optional)',
-        visit_data: 'object (optional: type, url, referrer)',
-        network_data: 'object (optional)',
+        visit_data: 'object { type, url, referrer, userAgent, language } (optional)',
+        network_data: 'object { ip, timestamp } (optional)',
       },
       metadata: { requiredPlan: 'free' },
       func: async (dataService, context, params) => {
