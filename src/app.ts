@@ -63,6 +63,8 @@ const sanitizationMiddleware = (req: Request, res: Response, next: NextFunction)
 
 // --- Security Middlewares ---
 
+const PUBLIC_COMMANDS = ['system.analytics.track', 'ANALYTICS:track-visit'];
+
 const app = express();
 
 app.use(cors());
@@ -110,10 +112,9 @@ app.use(sanitizationMiddleware);
 
 const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
   // PUBLIC COMMAND WHITELIST: Allow these commands to bypass authentication
-  const publicCommands = ['system.analytics.track', 'ANALYTICS:track-visit', 'staff.create'];
   const requestedCmd = (req.body as Record<string, unknown>)?.cmd;
 
-  if (typeof requestedCmd === 'string' && publicCommands.includes(requestedCmd)) {
+  if (typeof requestedCmd === 'string' && PUBLIC_COMMANDS.includes(requestedCmd)) {
     return next();
   }
 
@@ -613,14 +614,6 @@ app.post(
           errorCode: appError.code,
         })
         .catch((err) => console.error('Event logging failed:', err));
-
-      res.status(appError.statusCode).json(formattedResponse);
-    }
-  },
-);
-
-export default app;
-((err) => console.error('Event logging failed:', err));
 
       res.status(appError.statusCode).json(formattedResponse);
     }
