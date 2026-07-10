@@ -83,6 +83,28 @@ class EmployeeCommandHandler {
             );
           }
 
+          if (!name || typeof name !== 'string') {
+            return ServiceResponseHelper.error('Employee name is required.', 'MISSING_PARAMS');
+          }
+
+          if (!role || typeof role !== 'string') {
+            return ServiceResponseHelper.error('Employee role (label) is required.', 'MISSING_PARAMS');
+          }
+
+          if (type === 'human' && !user_id) {
+            return ServiceResponseHelper.error(
+              'A user_id is required when creating a human employee to link them to a system account.',
+              'MISSING_PARAMS',
+            );
+          }
+
+          if (type === 'bot' && !bot_profile_id) {
+            return ServiceResponseHelper.error(
+              'A bot_profile_id is required when creating a bot employee.',
+              'MISSING_PARAMS',
+            );
+          }
+
           const employeeId = crypto.randomUUID();
           const res = await dataService.push(
             'employees',
