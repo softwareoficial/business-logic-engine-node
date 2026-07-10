@@ -256,7 +256,7 @@ class SystemCommandHandler {
           return await dataService.executeCustom('CLIENT:user-create', {
             username: username as string,
             password: password as string,
-            role_id: roleId,
+            role: normalizedRole,
             clienteId: dataService.ensureClientId({ tenantId: context.tenantId }),
           });
         } catch (e: unknown) {
