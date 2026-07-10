@@ -515,9 +515,8 @@ app.get('/commands', (req: Request, res: Response) => {
 
 const conditionalPublicLimiter = (req: Request, res: Response, next: NextFunction) => {
   const requestedCmd = (req.body as Record<string, unknown>)?.cmd;
-  const publicCommands = ['system.analytics.track', 'ANALYTICS:track-visit'];
 
-  if (typeof requestedCmd === 'string' && publicCommands.includes(requestedCmd)) {
+  if (typeof requestedCmd === 'string' && PUBLIC_COMMANDS.includes(requestedCmd)) {
     return publicApiLimiter(req, res, next);
   }
   next();
@@ -614,6 +613,14 @@ app.post(
           errorCode: appError.code,
         })
         .catch((err) => console.error('Event logging failed:', err));
+
+      res.status(appError.statusCode).json(formattedResponse);
+    }
+  },
+);
+
+export default app;
+((err) => console.error('Event logging failed:', err));
 
       res.status(appError.statusCode).json(formattedResponse);
     }
