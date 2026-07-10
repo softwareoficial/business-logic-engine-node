@@ -25,9 +25,30 @@ class SystemCommandHandler {
       func: async (dataService, context, params) => {
         try {
           const { client_name, owner_email } = params as Record<string, unknown>;
+
+          const name = client_name as string;
+          const email = owner_email as string;
+
+          // 1. Validation: Length limits
+          if (!name || name.length < 1 || name.length > 100) {
+            return ServiceResponseHelper.error(
+              'Client name must be between 1 and 100 characters',
+              'INVALID_INPUT',
+            );
+          }
+          if (!email || email.length < 5 || email.length > 255) {
+            return ServiceResponseHelper.error('Owner email length is invalid', 'INVALID_INPUT');
+          }
+
+          // 2. Validation: Email format
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailRegex.test(email)) {
+            return ServiceResponseHelper.error('Invalid owner email format', 'INVALID_EMAIL');
+          }
+
           return await dataService.executeCustom('APP:client-create', {
-            client_name: client_name as string,
-            owner_email: owner_email as string,
+            client_name: name,
+            owner_email: email,
             tenant_id: context.tenantId,
           });
         } catch (e: unknown) {

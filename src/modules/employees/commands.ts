@@ -188,7 +188,7 @@ class EmployeeCommandHandler {
           if (!res.success) {
             return ServiceResponseHelper.error(
               `Goal setting failed: ${res.message}`,
-              (res.data as any)?.error_code || 'GOAL_SET_ERROR',
+              ((res.data as Record<string, unknown>)?.error_code as string) || 'GOAL_SET_ERROR',
             );
           }
 

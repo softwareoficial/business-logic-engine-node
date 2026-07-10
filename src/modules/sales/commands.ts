@@ -240,7 +240,8 @@ class SalesCommandHandler {
           if (!res.success) {
             return ServiceResponseHelper.error(
               `Payment confirmation failed: ${res.message}`,
-              (res.data as any)?.error_code || 'CONFIRM_PAYMENT_ERROR',
+              ((res.data as Record<string, unknown>)?.error_code as string) ||
+                'CONFIRM_PAYMENT_ERROR',
             );
           }
 

@@ -108,20 +108,62 @@ app.post('/register', async (req: Request, res: Response) => {
   try {
     const validatedData = RegisterSchema.parse(req.body);
 
-    const result = await dbClient.execute('APP:self-register', {
-      username: validatedData.username,
-      password: validatedData.password,
-      nombreCliente: validatedData.nombreCliente,
-    });
+    // 1. Prevent duplicate usernames (search in users collection)
+    const userExists = await dbClient.find(
+      'users',
+      { username: validatedData.username },
+      { limit: 1 },
+      { tenantId: '1' }, // Use system tenant for global user lookup
+    );
 
-    if (!result.success) {
-      return res.status(400).json(result);
+    if (userExists.success && userExists.data && userExists.data.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Username is already taken. Please choose another one.',
+        code: 'USERNAME_TAKEN',
+      });
+    }
+
+    // 2. Register Business (Client)
+    const clientRes = await dbClient.push(
+      'clients',
+      {
+        name: validatedData.nombreCliente,
+        created_at: new Date().toISOString(),
+      },
+      { tenantId: '1' },
+    );
+
+    if (!clientRes.success) {
+      return res.status(400).json(clientRes);
+    }
+
+    const clienteId = (clientRes.data as Record<string, unknown>)?.id || '1';
+
+    // 3. Register User linked to that client
+    const userRes = await dbClient.push(
+      'users',
+      {
+        username: validatedData.username,
+        password: validatedData.password, // In production, hash this!
+        clienteId: clienteId,
+        role: 'admin',
+        plan: 'free',
+      },
+      { tenantId: clienteId.toString() },
+    );
+
+    if (!userRes.success) {
+      return res.status(400).json(userRes);
     }
 
     res.status(201).json({
       success: true,
       message: 'Account created successfully',
-      data: result.data,
+      data: {
+        username: validatedData.username,
+        clienteId: clienteId,
+      },
     });
   } catch (error: unknown) {
     if (error instanceof z.ZodError) {
@@ -145,16 +187,60 @@ app.post('/login', async (req: Request, res: Response) => {
         .json({ success: false, message: 'Username and password are required' });
     }
 
-    const result = await dbClient.execute('USER:login', { username, password });
+    // 1. Find user by username
+    const userRes = await dbClient.find(
+      'users',
+      { username },
+      { limit: 1 },
+      { tenantId: '1' }, // Global search
+    );
 
-    if (!result.success) {
-      return res.status(401).json(result);
+    console.log('Login Debug - userRes:', JSON.stringify(userRes));
+
+    // Handle the nested results structure: userRes.data.results
+    const results =
+      userRes.data && typeof userRes.data === 'object' && 'results' in userRes.data
+        ? (userRes.data as any).results
+        : userRes.data;
+
+    if (!userRes.success || !results || !Array.isArray(results) || results.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid username or password',
+        code: 'AUTH_FAILED',
+      });
     }
+
+    const user = results[0] as Record<string, unknown>;
+
+    // 2. Validate password
+    const storedPassword = user?.password as string | undefined;
+    if (!storedPassword || storedPassword !== password) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid username or password',
+        code: 'AUTH_FAILED',
+      });
+    }
+
+    // 3. Mock Token Generation
+    // Since the infrastructure engine doesn't handle tokens,
+    // we generate a simple mock token that the authMiddleware can resolve.
+    // In a real system, we would use JWT or store a session in the DB.
+    const mockToken = `session_${user.username}_${Date.now()}`;
 
     res.json({
       success: true,
       message: 'Login successful',
-      data: result.data,
+      data: {
+        token: mockToken,
+        user: {
+          username: user.username,
+          clienteId: user.clienteId,
+          role: user.role,
+          plan: user.plan,
+        },
+      },
     });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Internal server error';
@@ -208,17 +294,27 @@ app.get('/', (req: Request, res: Response) => {
       <p>Estás conectado al <strong>Business Logic Engine</strong>. Esta API actúa como un Gateway seguro hacia el motor de infraestructura.</p>
       
       <h2>🛠️ Endpoints Principales</h2>
-      
+
       <div class="endpoint">
         <span class="method">POST</span> <code>/register</code>
         <p><strong>¡Empieza aquí!</strong> Crea una cuenta nueva. Recibirás tu <code>token</code> de acceso.</p>
       </div>
 
       <div class="endpoint">
+        <span class="method">POST</span> <code>/login</code>
+        <p>Autentica tu usuario para obtener el token de sesión.</p>
+      </div>
+
+      <div class="endpoint">
+        <span class="method">GET</span> <code>/me</code>
+        <p>Obtén la información de tu perfil y de tu empresa.</p>
+      </div>
+
+      <div class="endpoint">
         <span class="method">GET</span> <code>/commands</code>
         <p>Devuelve todos los comandos disponibles y ejemplos de uso.</p>
       </div>
-      
+
       <div class="endpoint">
         <span class="method">POST</span> <code>/execute</code>
         <p>Envía comandos de negocio. <strong>Importante:</strong> Debes incluir el token en el header Authorization: <code>Bearer YOUR_TOKEN</code>.</p>
@@ -226,7 +322,7 @@ app.get('/', (req: Request, res: Response) => {
           <strong>💡 Nota de Seguridad:</strong> Ya no necesitas enviar tenantId o userId. El sistema los resuelve automáticamente desde tu token.
         </div>
       </div>
-      
+
       <div class="endpoint">
         <span class="method">GET</span> <code>/health</code>
         <p>Verifica que el servidor y la base de datos están online.</p>
@@ -240,7 +336,7 @@ app.get('/', (req: Request, res: Response) => {
         </div>
         <div class="step">
           <div class="step-number">2</div>
-          <div><strong>Autentícate:</strong> Usa el <code>token</code> recibido en el header <code>Authorization: Bearer TOKEN</code>.</div>
+          <div><strong>Autentícate:</strong> Usa el <code>POST /login</code> para obtener tu token.</div>
         </div>
         <div class="step">
           <div class="step-number">3</div>
@@ -250,13 +346,14 @@ app.get('/', (req: Request, res: Response) => {
           <div class="step-number">4</div>
           <div><strong>Ejecuta:</strong> Envía un JSON a <code>/execute</code>:
             <pre style="background: #2c3e50; color: #fff; padding: 1rem; border-radius: 5px; overflow-x: auto;">{
-  "cmd": "nombre.del.comando",
-  "params": { "clave": "valor" },
-  "source": "web-app"
-}</pre>
+      "cmd": "nombre.del.comando",
+      "params": { "clave": "valor" },
+      "source": "web-app"
+      }</pre>
           </div>
         </div>
       </div>
+
 
       <div class="footer">
         Business Logic Engine &bull; Secure Gateway Mode

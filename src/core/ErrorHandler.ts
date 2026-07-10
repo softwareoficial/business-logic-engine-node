@@ -25,6 +25,7 @@ export class AppError extends Error {
 export interface FormattedErrorResponse {
   success: boolean;
   message: string;
+  user_message: string;
   error: {
     source: ErrorSource;
     code: string;
@@ -119,10 +120,26 @@ export class ErrorHandler {
       status: error.statusCode,
     });
 
+    // Determine a user-friendly message based on the error code
+    const userMessages: Record<string, string> = {
+      VALIDATION_ERROR: 'Please check the information you entered. Some fields are incorrect.',
+      UNAUTHORIZED: 'Your session has expired. Please log in again.',
+      FORBIDDEN: 'You do not have permission to perform this action.',
+      INTERNAL_SERVER_ERROR: 'Something went wrong on our end. Please try again in a few minutes.',
+      INFRA_ERROR: 'We are having trouble connecting to our data services. Please try again later.',
+      USERNAME_TAKEN: 'This username is already in use. Please try another one.',
+      AUTH_FAILED: 'The username or password provided is incorrect.',
+    };
+
+    const user_message =
+      userMessages[error.code] ||
+      'An unexpected error occurred. Please contact support if this persists.';
+
     // Return a clean, descriptive response for the frontend
     return {
       success: false,
       message: error.message,
+      user_message: user_message,
       error: {
         source: error.source,
         code: error.code,
