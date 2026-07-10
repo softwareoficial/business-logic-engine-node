@@ -190,65 +190,29 @@ app.post('/register', authLimiter, async (req: Request, res: Response) => {
   try {
     const validatedData = RegisterSchema.parse(req.body);
 
-    // 1. Prevent duplicate usernames (search in users collection)
-    const userExists = await dbClient.find(
-      'users',
-      { username: validatedData.username },
-      { limit: 1 },
-      { tenantId: SYSTEM_TENANT_ID }, // Use system tenant for global user lookup
-    );
-
-    const existingUsers =
-      userExists.data && typeof userExists.data === 'object' && 'results' in userExists.data
-        ? (userExists.data as Record<string, unknown>).results
-        : userExists.data;
-
-    if (userExists.success && Array.isArray(existingUsers) && existingUsers.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Username is already taken. Please choose another one.',
-        code: 'USERNAME_TAKEN',
-      });
-    }
-
-    // 2. Register Business (Client) using official Infrastructure command
-    const clientRes = await dbClient.execute('APP:client-create', {
-      nombre: validatedData.nombreCliente,
-    });
-
-    if (!clientRes.success) {
-      return res.status(400).json(clientRes);
-    }
-
-    const clienteId = (clientRes.data as Record<string, unknown>)?.id;
-
-    if (!clienteId) {
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to retrieve the created client ID.',
-        code: 'INTERNAL_ERROR',
-      });
-    }
-
-    // 3. Register User linked to that client using official Infrastructure command
-    const hashedPassword = await bcrypt.hash(validatedData.password, 10);
-    const userRes = await dbClient.execute('CLIENT:user-create', {
+    // The Infrastructure Engine's 'APP:self-register' command handles the entire atomic flow:
+    // 1. Validate username uniqueness
+    // 2. Create client with official template
+    // 3. Initialize business structures (stock, sales, employees)
+    // 4. Create the administrative user and generate a token
+    const result = await dbClient.execute('APP:self-register', {
+      nombreCliente: validatedData.nombreCliente,
       username: validatedData.username,
-      password: hashedPassword,
-      role: 'CLIENT_ADMIN', // First user is always the admin of the business
-      clienteId: clienteId,
+      password: validatedData.password,
     });
 
-    if (!userRes.success) {
-      return res.status(400).json(userRes);
+    if (!result.success) {
+      return res.status(400).json(result);
     }
 
+    // The infrastructure returns the necessary data for immediate login
     res.status(201).json({
       success: true,
       message: 'Account created successfully',
       data: {
+        token: (result.data as Record<string, unknown>)?.token,
+        clienteId: (result.data as Record<string, unknown>)?.clienteId,
         username: validatedData.username,
-        clienteId: clienteId,
       },
     });
   } catch (error: unknown) {
