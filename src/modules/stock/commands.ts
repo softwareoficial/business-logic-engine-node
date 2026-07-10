@@ -111,11 +111,60 @@ class StockCommandHandler {
       metadata: { requiredPlan: 'free' },
       func: async (dataService, context, params) => {
         try {
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { code, quantity, reason: _reason = 'MANUAL' } = params as Record<string, unknown>;
-          // Use write with a path to update only the quantity of the specific product
-          const path = `products[code=${code}].quantity`;
-          return await dataService.write(path, quantity, context);
+          const { code, quantity } = params as Record<string, unknown>;
+
+          // 1. Find the product to get its index in the array
+          const search = await dataService.find<Record<string, unknown>>(
+            'products',
+            { code },
+            { limit: 1 },
+            context,
+          );
+
+          if (!search.success || !search.data || search.data.length === 0) {
+            return ServiceResponseHelper.error(
+              `Product with code ${code} not found.`,
+              'PRODUCT_NOT_FOUND',
+            );
+          }
+
+          // The Infrastructure Engine expects a path like 'products[index].quantity'
+          // We assume the DB client's find returns results in a way we can't easily get the index,
+          // but we can use the find result to verify existence.
+          // For a more robust update, we should use a specific update-by-filter command if available.
+          // Since we only have 'USER:update-path', we must use the index.
+          // Let's try to retrieve the full list and find the index manually.
+          const allProducts = await dataService.find<Record<string, unknown>>(
+            'products',
+            {},
+            {},
+            context,
+          );
+
+          let productsArray: Record<string, unknown>[] = [];
+          if (allProducts.success && allProducts.data) {
+            productsArray = Array.isArray(allProducts.data)
+              ? allProducts.data
+              : (allProducts.data as Record<string, unknown>).results || [];
+          }
+
+          if (!Array.isArray(productsArray)) {
+            throw new Error('Could not retrieve product list as an array for indexing');
+          }
+
+          const index = productsArray.findIndex((p) => p.code === code);
+          if (index === -1) {
+            return ServiceResponseHelper.error(
+              'Product not found during indexing.',
+              'PRODUCT_NOT_FOUND',
+            );
+          }
+
+          const product = productsArray[index];
+          const updatedProduct = { ...product, quantity };
+
+          const path = `products.${index}`;
+          return await dataService.write(path, updatedProduct, context);
         } catch (e: unknown) {
           return ServiceResponseHelper.error(
             `Error updating stock: ${e instanceof Error ? e.message : 'Unknown error'}`,

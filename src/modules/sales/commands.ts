@@ -47,25 +47,42 @@ class SalesCommandHandler {
           }
 
           // 2. Validate and deduct stock for each item
+          const productsList = await dataService.find<Record<string, unknown>>(
+            'products',
+            {},
+            {},
+            context,
+          );
+          if (!productsList.success || !productsList.data) {
+            return ServiceResponseHelper.error(
+              'Could not retrieve product list',
+              'STOCK_LIST_ERROR',
+            );
+          }
+
+          const productsArray = Array.isArray(productsList.data)
+            ? productsList.data
+            : (productsList.data as Record<string, unknown>).results || [];
+
           for (const item of items) {
             const itemData = item as Record<string, unknown>;
-            const findRes = await dataService.find<Record<string, unknown>>(
-              'products',
-              { code: itemData.code },
-              { limit: 1 },
-              context,
+            const product = productsArray.find(
+              (p: Record<string, unknown>) => p.code === itemData.code,
             );
 
-            if (!findRes.success || !findRes.data || findRes.data.length === 0) {
+            if (!product) {
               return ServiceResponseHelper.error(
                 `Product ${itemData.code} not found`,
                 'STOCK_NOT_FOUND',
               );
             }
 
-            const product = findRes.data[0] as Record<string, unknown>;
-            const currentQuantity = parseInt((product.quantity as string) || '0');
-            const requestedQuantity = parseInt((itemData.quantity as string) || '0');
+            const currentQuantity = parseInt(
+              (product.quantity as string) || (product.quantity as number)?.toString() || '0',
+            );
+            const requestedQuantity = parseInt(
+              (itemData.quantity as string) || (itemData.quantity as number)?.toString() || '0',
+            );
 
             if (currentQuantity < requestedQuantity) {
               return ServiceResponseHelper.error(
@@ -75,25 +92,31 @@ class SalesCommandHandler {
             }
 
             const newQuantity = currentQuantity - requestedQuantity;
+            const productIndex = productsArray.findIndex(
+              (p: Record<string, unknown>) => p.code === itemData.code,
+            );
+
             await dataService.write(
-              `products[code=${itemData.code}].quantity`,
-              newQuantity,
+              `products.${productIndex}`,
+              { ...product, quantity: newQuantity },
               context,
             );
           }
 
-          // 2. Register the sale in the 'sales' array
+          // 3. Register the sale in the 'sales' array
           const saleRecord = {
             date: new Date().toISOString(),
             customer_phone,
             items,
             total: items.reduce((sum: number, i: unknown) => {
               const item = i as Record<string, unknown>;
-              return (
-                sum +
-                parseFloat((item.price as string) || '0') *
-                  parseInt((item.quantity as string) || '0')
+              const price = parseFloat(
+                (item.price as string) || (item.price as number)?.toString() || '0',
               );
+              const qty = parseInt(
+                (item.quantity as string) || (item.quantity as number)?.toString() || '0',
+              );
+              return sum + price * qty;
             }, 0),
             paga_con,
             status: 'completed',
@@ -110,9 +133,9 @@ class SalesCommandHandler {
 
           return ServiceResponseHelper.success('Sale processed successfully.', saleRes.data);
         } catch (e: unknown) {
-          const error = e as Error & { stack?: string };
+          const error = e as Error;
           return ServiceResponseHelper.error(
-            `Error processing sale: ${error.message || 'Unknown error'}. Data structure: ${error.stack || 'no stack'}`,
+            `Error processing sale: ${error.message || 'Unknown error'}`,
             'SALES_COBRAR_ERROR',
           );
         }

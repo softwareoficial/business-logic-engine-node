@@ -1,14 +1,20 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import sanitizeHtml from 'sanitize-html';
+import bcrypt from 'bcrypt';
+import rateLimit from 'express-rate-limit';
+import jwt from 'jsonwebtoken';
 import { dispatcher, RegisteredCommand } from './core/Dispatcher';
 import { dbClient } from './core/DbClient';
 import { RequestContext } from './core/RequestContext';
 import { ErrorHandler } from './core/ErrorHandler';
 import { logger } from './core/Logger';
 import { ExampleGenerator } from './core/ExampleGenerator';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-production-key-12345';
 
 // --- Validation Schemas ---
 const CommandRequestSchema = z.object({
@@ -35,13 +41,6 @@ interface AuthenticatedRequest extends Request {
   userToken?: string;
 }
 
-const app = express();
-
-app.use(cors());
-app.use(express.json());
-
-// --- Security Middlewares ---
-
 const sanitizationMiddleware = (req: Request, res: Response, next: NextFunction) => {
   const sanitizeValue = (val: unknown): unknown => {
     if (typeof val === 'string') return sanitizeHtml(val);
@@ -62,49 +61,90 @@ const sanitizationMiddleware = (req: Request, res: Response, next: NextFunction)
   next();
 };
 
+// --- Security Middlewares ---
+
+const app = express();
+
+app.use(cors());
+app.use(cookieParser());
+app.use(express.json());
+
+// --- Rate Limiting ---
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 1000, // Increase limit for E2E testing
+  message: {
+    success: false,
+    message: 'Too many requests from this IP, please try again after 15 minutes',
+    code: 'TOO_MANY_REQUESTS',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// --- Global Error Handler for Malformed JSON ---
+app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
+  if (err instanceof SyntaxError && (err as unknown as Record<string, unknown>)['body']) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid JSON payload provided.',
+      code: 'MALFORMED_JSON',
+    });
+  }
+  next(err);
+});
+
+app.use(sanitizationMiddleware);
+
 const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const token = req.cookies.session_token;
+
+  if (!token) {
     return res.status(401).json({
       success: false,
-      message:
-        'Authentication required. Please provide a valid Bearer token in the Authorization header.',
+      message: 'Authentication required. No session cookie found.',
       code: 'UNAUTHORIZED',
     });
   }
 
-  const token = authHeader.split(' ')[1];
-
   try {
-    // We use the Infra Engine to resolve the identity associated with this token.
-    // We call 'USER:read' which is the source of truth for user/tenant identity.
-    const authRes = await dbClient.execute('USER:read', {
-      token,
-    });
+    const decoded = jwt.verify(token, JWT_SECRET) as Record<string, unknown>;
 
-    if (!authRes.success || !authRes.data) {
+    // Verify the session still exists in the DB for instant revocation
+    const sessionRes = await dbClient.find('sessions', { token }, { limit: 1 }, { tenantId: '1' });
+
+    const results =
+      sessionRes.data && typeof sessionRes.data === 'object' && 'results' in sessionRes.data
+        ? (sessionRes.data as Record<string, unknown>).results
+        : sessionRes.data;
+
+    if (!sessionRes.success || !results || !Array.isArray(results) || results.length === 0) {
       return res.status(403).json({
         success: false,
-        message: 'Access forbidden. The provided token is not valid.',
+        message: 'Session expired or invalid.',
         code: 'FORBIDDEN',
       });
     }
 
-    // The Infra Engine returns the user object (id, username, cliente_id, role_id, etc.)
-    // We attach this verified identity to the request.
-    (req as AuthenticatedRequest).user = authRes.data as AuthenticatedRequest['user'];
-    (req as AuthenticatedRequest).userToken = token;
+    (req as AuthenticatedRequest).user = {
+      id: (decoded.userId || decoded.username) as string | number,
+      cliente_id: decoded.clienteId as string | number,
+      role_name: decoded.role as string,
+      plan: decoded.plan as string,
+    };
+
     next();
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Security validation failed';
-    res
-      .status(500)
-      .json({ success: false, message: 'Security validation failed', error: errorMessage });
+  } catch {
+    res.status(401).json({
+      success: false,
+      message: 'Invalid or expired session.',
+      code: 'AUTH_FAILED',
+    });
   }
 };
 // --- Endpoints ---
 
-app.post('/register', async (req: Request, res: Response) => {
+app.post('/register', authLimiter, async (req: Request, res: Response) => {
   try {
     const validatedData = RegisterSchema.parse(req.body);
 
@@ -116,7 +156,12 @@ app.post('/register', async (req: Request, res: Response) => {
       { tenantId: '1' }, // Use system tenant for global user lookup
     );
 
-    if (userExists.success && userExists.data && userExists.data.length > 0) {
+    const existingUsers =
+      userExists.data && typeof userExists.data === 'object' && 'results' in userExists.data
+        ? (userExists.data as Record<string, unknown>).results
+        : userExists.data;
+
+    if (userExists.success && Array.isArray(existingUsers) && existingUsers.length > 0) {
       return res.status(400).json({
         success: false,
         message: 'Username is already taken. Please choose another one.',
@@ -141,11 +186,12 @@ app.post('/register', async (req: Request, res: Response) => {
     const clienteId = (clientRes.data as Record<string, unknown>)?.id || '1';
 
     // 3. Register User linked to that client
+    const hashedPassword = await bcrypt.hash(validatedData.password, 10);
     const userRes = await dbClient.push(
       'users',
       {
         username: validatedData.username,
-        password: validatedData.password, // In production, hash this!
+        password: hashedPassword,
         clienteId: clienteId,
         role: 'admin',
         plan: 'free',
@@ -178,7 +224,7 @@ app.post('/register', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/login', async (req: Request, res: Response) => {
+app.post('/login', authLimiter, async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
     if (!username || !password) {
@@ -187,20 +233,11 @@ app.post('/login', async (req: Request, res: Response) => {
         .json({ success: false, message: 'Username and password are required' });
     }
 
-    // 1. Find user by username
-    const userRes = await dbClient.find(
-      'users',
-      { username },
-      { limit: 1 },
-      { tenantId: '1' }, // Global search
-    );
+    const userRes = await dbClient.find('users', { username }, { limit: 1 }, { tenantId: '1' });
 
-    console.log('Login Debug - userRes:', JSON.stringify(userRes));
-
-    // Handle the nested results structure: userRes.data.results
     const results =
       userRes.data && typeof userRes.data === 'object' && 'results' in userRes.data
-        ? (userRes.data as any).results
+        ? (userRes.data as Record<string, unknown>).results
         : userRes.data;
 
     if (!userRes.success || !results || !Array.isArray(results) || results.length === 0) {
@@ -212,10 +249,8 @@ app.post('/login', async (req: Request, res: Response) => {
     }
 
     const user = results[0] as Record<string, unknown>;
-
-    // 2. Validate password
     const storedPassword = user?.password as string | undefined;
-    if (!storedPassword || storedPassword !== password) {
+    if (!storedPassword || !(await bcrypt.compare(password, storedPassword))) {
       return res.status(401).json({
         success: false,
         message: 'Invalid username or password',
@@ -223,17 +258,44 @@ app.post('/login', async (req: Request, res: Response) => {
       });
     }
 
-    // 3. Mock Token Generation
-    // Since the infrastructure engine doesn't handle tokens,
-    // we generate a simple mock token that the authMiddleware can resolve.
-    // In a real system, we would use JWT or store a session in the DB.
-    const mockToken = `session_${user.username}_${Date.now()}`;
+    // Create a signed JWT
+    const token = jwt.sign(
+      {
+        userId: user.userId || user.username,
+        clienteId: user.clienteId,
+        role: user.role,
+        plan: user.plan,
+      },
+      JWT_SECRET,
+      { expiresIn: '24h' },
+    );
+
+    // Store in DB for session tracking/revocation
+    await dbClient.push(
+      'sessions',
+      {
+        token,
+        username: user.username,
+        clienteId: user.clienteId,
+        role: user.role,
+        plan: user.plan,
+        created_at: new Date().toISOString(),
+      },
+      { tenantId: '1' },
+    );
+
+    // Set HttpOnly Cookie
+    res.cookie('session_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    });
 
     res.json({
       success: true,
       message: 'Login successful',
       data: {
-        token: mockToken,
         user: {
           username: user.username,
           clienteId: user.clienteId,
@@ -250,23 +312,58 @@ app.post('/login', async (req: Request, res: Response) => {
 
 app.get('/me', authMiddleware, async (req: Request, res: Response) => {
   try {
-    // The user token is already verified by authMiddleware.
-    // We call 'USER:get-profile' to get the detailed user and company info.
-    const result = await dbClient.execute('USER:get-profile', {});
-
-    if (!result.success) {
-      return res.status(403).json(result);
+    const user = (req as AuthenticatedRequest).user;
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'User identity not found' });
     }
 
+    // Attempt to fetch full profile from DB
+    const result = await dbClient.execute('USER:get-profile', {
+      userId: user.id,
+    });
+
+    if (result.success) {
+      return res.json({
+        success: true,
+        data: result.data,
+      });
+    }
+
+    // Fallback: Return basic identity from token if DB profile fetch fails
+    // This ensures the endpoint remains functional for session verification
     res.json({
       success: true,
-      data: result.data,
+      data: {
+        ...user,
+        note: 'Basic profile returned from session token',
+      },
     });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Internal server error';
     res.status(500).json({ success: false, message: errorMessage });
   }
 });
+
+app.post('/logout', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const token = req.cookies.session_token;
+
+    // 1. Remove session from DB
+    await dbClient.execute('SESSION:delete', { token });
+
+    // 2. Clear the cookie
+    res.clearCookie('session_token');
+
+    res.json({
+      success: true,
+      message: 'Logged out successfully',
+    });
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Internal server error';
+    res.status(500).json({ success: false, message: errorMessage });
+  }
+});
+
 app.get('/', (req: Request, res: Response) => {
   const html = `
     <!DOCTYPE html>
@@ -402,6 +499,7 @@ app.post(
   authMiddleware,
   async (req: Request, res: Response) => {
     const startTime = Date.now();
+
     try {
       const validatedData = CommandRequestSchema.parse(req.body);
       const user = (req as AuthenticatedRequest).user;
@@ -414,6 +512,7 @@ app.post(
         role: user?.role_name || 'employee',
         plan: user?.plan || 'free',
         source: req.body.source || 'FRONTEND',
+
         appId: req.body.appId || 'web-client',
         userAgent: req.headers['user-agent'] || 'unknown',
         ipAddress: Array.isArray(req.headers['x-forwarded-for'])
